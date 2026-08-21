@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>弹幕评论区智能分析 · Demo</title>
+<style>
+:root{
+  --pink:#FB7299; --pink-dim:#fff0f4; --blue:#00AEEC;
+  --ink:#18191C; --ink2:#61666D; --ink3:#9499A0;
+  --line:#E3E5E7; --bg:#F6F7F8; --card:#fff;
+  --ok:#00C48C; --warn:#FF9F1C; --bad:#F45B69;
+  --r:12px; --shadow:0 1px 3px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.04);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font:14px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  color:var(--ink); background:var(--bg); padding:32px 20px 80px;
+}
+.wrap{max-width:1080px;margin:0 auto}
+
+h1{font-size:22px;font-weight:600}
+h2{font-size:17px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+h2::before{content:'';width:3px;height:15px;background:var(--pink);border-radius:2px}
+.muted{color:var(--ink2)}
+.tiny{font-size:12px;color:var(--ink3)}
+.panel{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:22px;margin-bottom:20px}
+.hide{display:none!important}
+.btn{
+  font:inherit;font-weight:500;padding:9px 20px;border:0;border-radius:8px;
+  background:var(--pink);color:#fff;cursor:pointer;transition:.15s;
+}
+.btn:hover{filter:brightness(1.06)}
+.btn.ghost{background:#fff;color:var(--ink2);border:1px solid var(--line)}
+.btn.ghost:hover{border-color:var(--pink);color:var(--pink);filter:none}
+
+.banner{
+  background:linear-gradient(135deg,#FB7299,#FF9BB3);color:#fff;
+  border-radius:var(--r);padding:20px 24px;margin-bottom:20px;
+}
+.banner h1{margin-bottom:5px}
+.banner p{font-size:13px;opacity:.94}
+
+.entry{display:flex;gap:10px;align-items:center}
+.entry input{
+  flex:1;font:inherit;padding:11px 14px;border:1px solid var(--line);
+  border-radius:8px;outline:0;transition:.15s;
+}
+.entry input:focus{border-color:var(--pink);box-shadow:0 0 0 3px var(--pink-dim)}
+.samples{margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chip{
+  font-size:12px;padding:4px 11px;border-radius:20px;cursor:pointer;
+  background:var(--bg);border:1px solid var(--line);color:var(--ink2);
+}
+.chip:hover{border-color:var(--pink);color:var(--pink)}
+
+.stages{display:flex;gap:0;margin:6px 0 14px}
+.stage{flex:1;text-align:center;position:relative;font-size:12px;color:var(--ink3)}
+.stage::after{
+  content:'';position:absolute;top:11px;left:50%;width:100%;height:2px;background:var(--line);z-index:0;
+}
+.stage:last-child::after{display:none}
+.stage .dot{
+  width:24px;height:24px;border-radius:50%;background:#fff;border:2px solid var(--line);
+  display:flex;align-items:center;justify-content:center;margin:0 auto 6px;
+  position:relative;z-index:1;font-size:11px;transition:.3s;
+}
+.stage.doing .dot{border-color:var(--pink);color:var(--pink);animation:pulse 1.2s infinite}
+.stage.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}
+.stage.doing,.stage.done{color:var(--ink)}
+.stage.done::after{background:var(--ok)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(251,114,153,.4)}50%{box-shadow:0 0 0 6px rgba(251,114,153,0)}}
+.plog{
+  font:12px/1.9 ui-monospace,SFMono-Regular,Menlo,monospace;
+  background:#1c1d21;color:#9fe8c8;border-radius:8px;padding:12px 14px;max-height:120px;overflow:auto;
+}
+
+.vhead{display:flex;gap:16px;align-items:center}
+.cover{
+  width:150px;height:94px;border-radius:8px;flex-shrink:0;color:#fff;
+  background:linear-gradient(135deg,#00AEEC,#0080b3);
+  display:flex;align-items:center;justify-content:center;font-size:12px;
+}
+.stats{display:flex;gap:22px;margin-top:9px}
+.stat b{font-size:17px;font-weight:600;display:block;line-height:1.3}
+.stat span{font-size:12px;color:var(--ink3)}
+
+.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.card{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:18px;cursor:pointer;transition:.18s;
+}
+.card:hover{border-color:var(--pink);transform:translateY(-2px);box-shadow:var(--shadow)}
+.card.on{border-color:var(--pink);background:var(--pink-dim)}
+.card h3{font-size:15px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.card .big{font-size:24px;font-weight:600;color:var(--pink);line-height:1.4}
+.card .peek{font-size:12px;color:var(--ink2);margin-top:6px}
+.badge{
+  font-size:10px;padding:2px 7px;border-radius:10px;background:var(--bg);
+  color:var(--ink3);border:1px solid var(--line);font-weight:400;
+}
+
+.theme{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
+.theme-hd{
+  padding:13px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;
+  background:#fff;transition:.15s;
+}
+.theme-hd:hover{background:var(--pink-dim)}
+.theme-hd .arrow{color:var(--ink3);transition:.2s;font-size:11px}
+.theme.open .arrow{transform:rotate(90deg)}
+.theme-hd .nm{font-weight:500;flex:1}
+.theme-bd{display:none;padding:4px 16px 14px;background:#fcfcfd;border-top:1px solid var(--line)}
+.theme.open .theme-bd{display:block}
+.quote{
+  padding:10px 12px;margin-top:9px;background:#fff;border-radius:8px;
+  border-left:3px solid var(--line);font-size:13px;
+}
+.quote.pro{border-left-color:var(--ok)}
+.quote.con{border-left-color:var(--warn)}
+.quote-meta{margin-top:7px;font-size:11px;color:var(--ink3);display:flex;gap:14px;align-items:center}
+.quote-meta a{color:var(--blue);text-decoration:none}
+.quote-meta a:hover{text-decoration:underline}
+.note{
+  font-size:12px;color:#8a6d3b;background:#fff8ee;padding:8px 12px;
+  border-radius:6px;margin-top:10px;
+}
+.bar{height:5px;background:var(--line);border-radius:3px;overflow:hidden;width:90px}
+.bar i{display:block;height:100%;background:var(--pink);border-radius:3px}
+
+.axis{position:relative;height:64px;background:var(--bg);border-radius:8px;margin:12px 0 6px;overflow:hidden}
+.axis .col{position:absolute;bottom:0;width:3px;background:#c9ccd0;border-radius:2px}
+.axis .col.hot{background:var(--pink)}
+.peak{
+  display:flex;gap:12px;align-items:flex-start;padding:11px 13px;
+  background:#fff;border:1px solid var(--line);border-radius:8px;margin-top:9px;
+}
+.peak .tm{
+  font:600 13px ui-monospace,Menlo,monospace;color:var(--pink);
+  background:var(--pink-dim);padding:3px 8px;border-radius:5px;flex-shrink:0;
+}
+
+.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:18px}
+.slot{border:1px solid var(--line);border-radius:10px;padding:14px;background:#fff}
+.slot h4{font-size:12px;color:var(--ink3);font-weight:500;margin-bottom:6px}
+.slot p{font-size:13px;line-height:1.6}
+.slot .ref{font-size:11px;color:var(--blue);margin-top:7px;cursor:pointer}
+.acts{counter-reset:a}
+.act{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);align-items:flex-start}
+.act:last-child{border:0}
+.act::before{
+  counter-increment:a;content:counter(a);flex-shrink:0;
+  width:22px;height:22px;border-radius:50%;background:var(--pink);color:#fff;
+  font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;
+}
+.act .src{font-size:11px;color:var(--ink3);margin-top:4px}
+
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line)}
+th{font-size:12px;color:var(--ink3);font-weight:500;background:var(--bg)}
+@media(max-width:720px){.cards{grid-template-columns:1fr}.vhead{flex-direction:column;align-items:flex-start}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="banner">
+    <h1>弹幕评论区智能分析</h1>
+    <p>输入一个 BV 号，几分钟内拿到这条视频的观众复盘报告</p>
+  </div>
+
+  <div class="panel" id="entry">
+    <div class="entry">
+      <input id="bv" placeholder="输入 BV 号或稿件链接，如 BV1xx411c7mD" value="BV1xx411c7mD">
+      <button class="btn" id="go">生成复盘报告</button>
+    </div>
+    <div class="samples">
+      <span class="tiny">样例视频：</span>
+      <span class="chip" data-s="0">肖恩看</span>
+      <span class="chip" data-s="1">好叫好伐</span>
+      <span class="chip" data-s="2">笔吧评测室</span>
+    </div>
+  </div>
+
+  <div class="panel hide" id="prog">
+    <h2>分析中</h2>
+    <div class="stages">
+      <div class="stage" data-k="0"><div class="dot">1</div>数据接入</div>
+      <div class="stage" data-k="1"><div class="dot">2</div>清洗去重</div>
+      <div class="stage" data-k="2"><div class="dot">3</div>聚类分析</div>
+      <div class="stage" data-k="3"><div class="dot">4</div>智能归纳</div>
+      <div class="stage" data-k="4"><div class="dot">5</div>生成报告</div>
+    </div>
+    <div class="plog" id="plog"></div>
+  </div>
+
+  <div id="result" class="hide">
+
+    <div class="panel">
+      <div class="vhead">
+        <div class="cover">封面</div>
+        <div style="flex:1">
+          <div style="font-size:16px;font-weight:600" id="vtitle"></div>
+          <div class="tiny" id="vup" style="margin-top:3px"></div>
+          <div class="stats">
+            <div class="stat"><b id="s-play"></b><span>播放</span></div>
+            <div class="stat"><b id="s-dm"></b><span>弹幕</span></div>
+            <div class="stat"><b id="s-cm"></b><span>评论</span></div>
+            <div class="stat"><b id="s-cost" style="color:var(--ok)"></b><span>分析耗时</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>洞察概览 · 点卡片查看详情</h2>
+      <div class="cards" id="cards"></div>
+    </div>
+
+    <div class="panel" id="drill"></div>
+
+    <div class="panel">
+      <h2>一页复盘结论</h2>
+      <div class="slots" id="slots"></div>
+      <h2 style="margin-top:6px">Top 5 可执行改进建议</h2>
+      <div class="acts" id="acts"></div>
+      <div style="margin-top:18px;display:flex;gap:10px">
+        <button class="btn ghost" onclick="alert('导出 PNG')">导出图片</button>
+        <button class="btn ghost" onclick="alert('导出 Markdown')">导出 Markdown</button>
+        <button class="btn ghost" id="again">重新演示</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+
+$$('.chip').forEach(c=>c.onclick=()=>{
+  $('#bv').value='BV1'+['xx411c7mD','aB4y1P7Qk','cD5x1M8Rn'][c.dataset.s];
+});
+$('#go').onclick=run;
+$('#again').onclick=()=>{
+  $('#result').classList.add('hide'); $('#entry').classList.remove('hide');
+  window.scrollTo({top:0,behavior:'smooth'});
+};
+
+let DATA = null; // 存储后端返回的报告数据
+
+function run(){
+  const bvInput = $('#bv').value.trim();
+  if(!bvInput){ alert('请输入BV号'); return; }
+
+  $('#entry').classList.add('hide'); $('#prog').classList.remove('hide');
+  $('#result').classList.add('hide'); $('#plog').innerHTML='';
+  $$('.stage').forEach(s=>s.className='stage');
+
+  // 建立 SSE 连接
+  const evtSource = new EventSource('/api/analyze/stream?bvid=' + encodeURIComponent(bvInput));
+  let currentStage = -1;
+
+  evtSource.addEventListener('progress', e => {
+    const d = JSON.parse(e.data);
+    const stage = d.stage;
+
+    // 更新 stage 指示器
+    if(stage > currentStage){
+      // 标记之前的为 done
+      for(let i = 0; i <= currentStage; i++){
+        const el = $(`.stage[data-k="${i}"]`);
+        if(el) el.className = 'stage done';
+      }
+      currentStage = stage;
+      const el = $(`.stage[data-k="${stage}"]`);
+      if(el) el.className = 'stage doing';
+    }
+
+    // 追加日志
+    const extra = d.extra ? ` <span style="color:#5a6b63">[${d.extra}]</span>` : '';
+    $('#plog').innerHTML += `<div>› ${d.msg}${extra}</div>`;
+    $('#plog').scrollTop = 9999;
+  });
+
+  evtSource.addEventListener('done', e => {
+    evtSource.close();
+    DATA = JSON.parse(e.data);
+
+    // 标记所有 stage 为 done
+    $$('.stage').forEach(s => s.className = 'stage done');
+    setTimeout(() => {
+      $('#prog').classList.add('hide');
+      render(DATA);
+    }, 400);
+  });
+
+  evtSource.addEventListener('error', e => {
+    evtSource.close();
+    try {
+      const d = JSON.parse(e.data);
+      $('#plog').innerHTML += `<div style="color:#F45B69">❌ ${d.msg}</div>`;
+    } catch(_) {
+      $('#plog').innerHTML += `<div style="color:#F45B69">❌ 连接中断</div>`;
+    }
+  });
+}
+
+function render(D){
+  const v = D.video, R = $('#result');
+  R.classList.remove('hide');
+  $('#vtitle').textContent = v.title;
+  $('#vup').textContent = v.up;
+  $('#s-play').textContent = v.play;
+  $('#s-dm').textContent = v.dm.toLocaleString();
+  $('#s-cm').textContent = v.cm.toLocaleString();
+  $('#s-cost').textContent = (D.meta && D.meta.elapsed) ? D.meta.elapsed + 's' : '-';
+
+  // 动态计算卡片摘要
+  const dmCount = D.dmThemes ? D.dmThemes.length : 0;
+  const pkCount = D.peaks ? D.peaks.length : 0;
+  const cmCount = D.cmThemes ? D.cmThemes.length : 0;
+  const actCount = D.acts ? D.acts.length : 0;
+  const topPeak = D.peaks && D.peaks[0] ? `${D.peaks[0].tm} 密度达${D.peaks[0].x}` : '-';
+  const hiDisCount = D.cmThemes ? D.cmThemes.filter(t=>t.dis==='高').length : 0;
+
+  const cards=[
+    {k:'dm', t:'弹幕反馈', b:dmCount+' 个主题', p:D.dmThemes&&D.dmThemes[0]?`最高频「${D.dmThemes[0].n}」${D.dmThemes[0].c} 条`:'-'},
+    {k:'pk', t:'高能时刻', b:'TOP '+pkCount+' 片段', p:topPeak},
+    {k:'cm', t:'评论总结', b:cmCount+' 个主题', p:hiDisCount?`含 ${hiDisCount} 个高争议主题`:`${cmCount} 个主题已归纳`},
+    {k:'rp', t:'复盘报告', b:(D.slots?D.slots.length:0)+' 条结论', p:`Top${actCount} 可执行建议已生成`}];
+  $('#cards').innerHTML = cards.map(c=>`
+    <div class="card" data-k="${c.k}">
+      <h3>${c.t}</h3>
+      <div class="big">${c.b}</div>
+      <div class="peek">${c.p}</div>
+    </div>`).join('');
+  $$('.card').forEach(c=>c.onclick=()=>{
+    $$('.card').forEach(x=>x.classList.remove('on')); c.classList.add('on');
+    drill(c.dataset.k);
+  });
+
+  $('#slots').innerHTML = (D.slots||[]).map(s=>
+    `<div class="slot"><h4>${s.h}</h4><p>${s.p}</p><div class="ref">▸ ${s.r}</div></div>`).join('');
+  $('#acts').innerHTML = (D.acts||[]).map(a=>
+    `<div class="act"><div><div>${a.t}</div><div class="src">依据：${a.s}</div></div></div>`).join('');
+
+  drill('cm');
+  R.scrollIntoView({behavior:'smooth'});
+}
+
+function drill(k){
+  const D = DATA;
+  const Dr = $('#drill');
+  if(k==='dm'){
+    Dr.innerHTML=`<h2>弹幕反馈</h2>
+      <table><tr><th>弹幕主题</th><th style="width:110px">出现次数</th><th style="width:150px">集中时段</th></tr>
+      ${(D.dmThemes||[]).map(t=>`<tr><td>${t.n}</td><td><b>${t.c}</b> 条</td><td class="muted">${t.t}</td></tr>`).join('')}</table>`;
+  }
+  else if(k==='pk'){
+    const totalDur = 480; // 近似
+    const cols=Array.from({length:80},(_,i)=>{
+      let h = 8;
+      if(D.peaks){
+        for(const p of D.peaks){
+          const parts = p.tm.split(':');
+          const sec = parseInt(parts[0])*60 + parseInt(parts[1]);
+          const idx = Math.floor(sec / totalDur * 80);
+          if(Math.abs(i - idx) <= 1) h = Math.min(58, parseFloat(p.x) * 8);
+        }
+      }
+      const hot = h > 20;
+      return `<div class="col ${hot?'hot':''}" style="left:${i*1.25}%;height:${h}px"></div>`;
+    }).join('');
+    Dr.innerHTML=`<h2>高能时刻</h2>
+      <div class="axis">${cols}</div>
+      <div class="tiny">横轴为视频进度，粉色为弹幕密度峰值区间</div>
+      ${(D.peaks||[]).map(p=>`<div class="peak"><div class="tm">${p.tm}</div>
+        <div><div><b>密度 ${p.x}</b>　<span class="muted">该区间 ${p.n} 条弹幕</span></div>
+        <div style="margin-top:5px">${p.s||''}</div></div></div>`).join('')}`;
+  }
+  else if(k==='cm'){
+    Dr.innerHTML=`<h2>评论总结 · 点标题展开</h2>
+      ${(D.cmThemes||[]).map((t,i)=>`
+        <div class="theme ${i===0?'open':''}">
+          <div class="theme-hd" onclick="this.parentNode.classList.toggle('open')">
+            <span class="arrow">▶</span>
+            <span class="nm">${t.n}</span>
+            <span class="tiny">${t.c} 条</span>
+            <span class="bar"><i style="width:${t.pct||0}%"></i></span>
+            ${t.dis?`<span class="badge">争议度 ${t.dis}</span>`:''}
+          </div>
+          <div class="theme-bd">
+            ${(t.q||[]).map(q=>`<div class="quote ${q.k}">${q.t}
+              <div class="quote-meta"><span>↑ ${q.l}</span><span>↩ ${q.r}</span>
+              <span class="tiny">${q.k==='con'?'反对面':'支持面'}</span></div></div>`).join('')}
+            ${t.note?`<div class="note">${t.note}</div>`:''}
+          </div>
+        </div>`).join('')}`;
+  }
+  else{
+    Dr.innerHTML=`<h2>复盘报告</h2>
+      <div class="muted">五个固定问题的结论与 Top5 建议见下方「一页复盘结论」。</div>`;
+  }
+}
+</script>
+</body>
+</html>
