@@ -18,7 +18,8 @@ from typing import Callable
 from bilibili.video import extract_bvid, fetch_video_info
 from bilibili.danmaku import fetch_danmaku
 from bilibili.comment import fetch_comments
-from analysis.llm import load_model
+from analysis.llm import init_backend
+from analysis.llm_config import load_config, override
 from analysis.clean import clean_danmakus, clean_comments
 from analysis.danmaku_analysis import analyze_danmaku
 from analysis.comment_analysis import analyze_comments
@@ -85,7 +86,7 @@ def run_fetch(bvid: str, output_dir: str = "./output",
     return data_dir
 
 
-def run_pipeline(data_dir: str, model_name: str = "Qwen/Qwen3-0.6B",
+def run_pipeline(data_dir: str, cfg: dict | None = None,
                  skip_clean: bool = False,
                  on_progress: Callable | None = None) -> dict:
     """
@@ -93,13 +94,14 @@ def run_pipeline(data_dir: str, model_name: str = "Qwen/Qwen3-0.6B",
 
     参数:
         data_dir: 数据目录路径（含 video_info.json, danmaku.json, comments.json）
-        model_name: LLM 模型名
+        cfg: LLM 配置（None 时从环境变量+配置文件读取）
         skip_clean: 是否跳过清洗
         on_progress: 进度回调 on_progress(stage, msg, extra)
 
     返回: report dict
     """
     logs = []
+    cfg = cfg or load_config()
 
     def _progress(stage, msg, extra=""):
         logs.append([msg, extra])
@@ -122,8 +124,9 @@ def run_pipeline(data_dir: str, model_name: str = "Qwen/Qwen3-0.6B",
             r.setdefault("rcount", 0)
             all_comments.append(r)
 
-    # 2. 加载 LLM
-    load_model(model_name)
+    # 2. 初始化 LLM 后端
+    backend_label = init_backend(cfg)
+    _progress(1, f"LLM 后端就绪：{backend_label}", "")
 
     # 3. 清洗
     t0 = time.time()
@@ -175,7 +178,9 @@ def run_pipeline(data_dir: str, model_name: str = "Qwen/Qwen3-0.6B",
         "acts": acts,
         "logs": logs,
         "meta": {
-            "model": model_name,
+            "provider": cfg["provider"],
+            "model": cfg[cfg["provider"]].get("model", ""),
+            "backend": backend_label,
             "clean_stats": clean_stats,
         },
     }
@@ -188,12 +193,19 @@ def run_pipeline(data_dir: str, model_name: str = "Qwen/Qwen3-0.6B",
 def main():
     parser = argparse.ArgumentParser(description="B站视频弹幕+评论智能分析管线")
     parser.add_argument("input", help="BV 号或已采集数据的目录路径")
-    parser.add_argument("--model", type=str, default="Qwen/Qwen3-0.6B",
-                        help="LLM 模型名称 (默认: Qwen/Qwen3-0.6B)")
+    parser.add_argument("--provider", choices=["local", "openai", "anthropic"],
+                        help="LLM 后端 (默认: 读取配置文件/环境变量，缺省 local)")
+    parser.add_argument("--model", type=str, help="模型名称，覆盖配置")
+    parser.add_argument("--api-key", type=str,
+                        help="API Key，覆盖配置（更推荐用环境变量，避免出现在 shell 历史里）")
+    parser.add_argument("--base-url", type=str, help="接口地址，覆盖配置")
     parser.add_argument("--output-dir", type=str, default="./output",
                         help="输出根目录 (默认: ./output)")
     parser.add_argument("--skip-clean", action="store_true", help="跳过清洗步骤")
     args = parser.parse_args()
+
+    cfg = override(load_config(), provider=args.provider, model=args.model,
+                   api_key=args.api_key, base_url=args.base_url)
 
     start_time = time.time()
 
@@ -207,7 +219,7 @@ def main():
     print("=" * 60)
 
     # 运行管线
-    report = run_pipeline(input_dir, model_name=args.model, skip_clean=args.skip_clean)
+    report = run_pipeline(input_dir, cfg=cfg, skip_clean=args.skip_clean)
 
     elapsed = round(time.time() - start_time, 1)
     report["meta"]["elapsed"] = elapsed

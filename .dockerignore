@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 output/
+config/
 .git/
 .gitignore
 *.md

@@ -4,3 +4,5 @@ jieba>=0.42.1
 fastapi>=0.100.0
 uvicorn>=0.20.0
 sse-starlette>=1.6.0
+# provider=anthropic 时需要；provider=openai 只用 requests，provider=local 需额外装 torch+transformers
+anthropic>=0.40.0

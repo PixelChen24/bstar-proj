@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 采集与分析产物
+output/
+
+# LLM 配置（含 API Key）
+config/
+
+# 系统文件
+.DS_Store

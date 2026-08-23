@@ -5,10 +5,16 @@ services:
       - "8000:8000"
     volumes:
       - ./output:/app/output
+      - ./config:/app/config          # LLM 配置（含 API Key），持久化到宿主机
       - model-cache:/root/.cache/huggingface
     environment:
       - HF_ENDPOINT=https://hf-mirror.com
-      - LLM_MODEL=Qwen/Qwen3-0.6B
+      # 后端选择：local / openai / anthropic
+      - LLM_PROVIDER=${LLM_PROVIDER:-local}
+      - LLM_MODEL=${LLM_MODEL:-Qwen/Qwen3-0.6B}
+      # 密钥和接口地址不走环境变量，写进上面挂载的 ./config/llm.json
+      # （-e 传的值会留在 docker inspect 里）
+    # 只有 LLM_PROVIDER=local 需要 GPU。走 API 时删掉下面整个 deploy 段
     deploy:
       resources:
         reservations:
