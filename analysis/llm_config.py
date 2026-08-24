@@ -1,13 +1,15 @@
-"""LLM 后端配置：本地配置文件（密钥）+ 环境变量（非敏感项）
+"""LLM 后端配置：本地配置文件（密钥）+ 环境变量
 
 优先级：配置文件 > 环境变量 > 内置默认值。
 
-API Key 与接口地址只从本地配置文件读取（./config/llm.json，权限 0600，
-由 Web 设置面板或手动写入）。故意不从环境变量继承这两项：宿主机上常有
-同名变量（如其他工具设置的 ANTHROPIC_BASE_URL / OPENAI_API_KEY），
-继承会让本服务在用户不知情的情况下把请求和密钥发往意料之外的地址。
+支持的环境变量：
+  LLM_PROVIDER     — 后端选择（openai / anthropic）
+  LLM_MODEL        — 模型名（作用于当前 provider）
+  BSTAR_KEY        — API Key（作用于当前 provider）
+  BSTAR_MODEL      — 模型名，优先级高于 LLM_MODEL
+  BSTAR_BASE_URL   — 接口地址（作用于当前 provider）
 
-环境变量只用于非敏感项（LLM_PROVIDER / LLM_MODEL），方便 Docker / CI 选后端。
+配置文件（./config/llm.json，权限 0600）优先级最高，由 Web 设置面板或手动写入。
 """
 
 import json
@@ -55,11 +57,10 @@ def _defaults() -> dict:
 
 
 def from_env() -> dict:
-    """从环境变量构建配置。只读取非敏感项。
+    """从环境变量构建配置。
 
-    刻意不读 OPENAI_API_KEY / ANTHROPIC_API_KEY / *_BASE_URL：这些名字在开发机上
-    经常已被别的工具占用，继承会导致密钥和请求被发往用户没有指定的地址。
-    密钥与接口地址统一走 config_path() 指向的本地文件。
+    通用项（不含密钥）：LLM_PROVIDER, LLM_MODEL
+    BSTAR_ 前缀变量（作用于当前 provider）：BSTAR_KEY, BSTAR_MODEL, BSTAR_BASE_URL
     """
     cfg = _defaults()
 
@@ -69,6 +70,14 @@ def from_env() -> dict:
 
     if os.environ.get("LLM_MODEL"):
         cfg[cfg["provider"]]["model"] = os.environ["LLM_MODEL"]
+
+    target = cfg["provider"]
+    if os.environ.get("BSTAR_KEY"):
+        cfg[target]["api_key"] = os.environ["BSTAR_KEY"]
+    if os.environ.get("BSTAR_MODEL"):
+        cfg[target]["model"] = os.environ["BSTAR_MODEL"]
+    if os.environ.get("BSTAR_BASE_URL"):
+        cfg[target]["base_url"] = os.environ["BSTAR_BASE_URL"]
 
     return cfg
 
@@ -103,7 +112,9 @@ def _merge(base: dict, patch: dict) -> dict:
             if key not in section or section[key] is None:
                 continue
             value = str(section[key]).strip()
-            if key in SECRET_FIELDS and (not value or _is_placeholder_secret(value)):
+            if not value:
+                continue
+            if key in SECRET_FIELDS and _is_placeholder_secret(value):
                 continue
             out[name][key] = value
 
@@ -219,9 +230,9 @@ def public_view(cfg: dict) -> dict:
 def describe_sources() -> dict:
     """当前配置的来源，供前端提示。"""
     path = config_path()
-    env_keys = [k for k in ("LLM_PROVIDER", "LLM_MODEL") if os.environ.get(k)]
+    env_keys = [k for k in ("LLM_PROVIDER", "LLM_MODEL", "BSTAR_KEY", "BSTAR_MODEL", "BSTAR_BASE_URL")
+                if os.environ.get(k)]
 
-    # 环境里存在但被本服务忽略的同名变量。提示出来避免用户以为它们生效了
     ignored = [
         k for k in ("OPENAI_API_KEY", "OPENAI_BASE_URL",
                     "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL")

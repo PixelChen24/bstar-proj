@@ -24,6 +24,7 @@ from bilibili.comment import fetch_comments
 from analyze_video import run_pipeline, save_json
 from analysis import llm_config
 from analysis.llm import init_backend, test_connection
+from analysis import rate_limit
 
 app = FastAPI(title="弹幕评论区智能分析")
 
@@ -135,8 +136,21 @@ async def get_report(bvid: str):
 
 
 @app.get("/api/analyze/stream")
-async def analyze_stream(bvid: str = Query(..., description="BV号")):
+async def analyze_stream(bvid: str = Query(..., description="BV号"), request: Request = None):
     """SSE 流式分析：采集 + 分析 + 推送进度"""
+
+    # 限流检查
+    client_ip = request.client.host if request.client else "unknown"
+    allowed, device_id, remaining = rate_limit.check(client_ip)
+    if not allowed:
+        async def rate_limit_gen():
+            yield {"event": "error", "data": json.dumps(
+                {"msg": f"今日请求次数已达上限（{rate_limit.DAILY_LIMIT} 次/天），请明天再试。"},
+                ensure_ascii=False)}
+        return EventSourceResponse(rate_limit_gen())
+
+    if remaining >= 0:
+        print(f"[限流] {device_id} 今日已通过，剩余 {remaining} 次")
 
     try:
         bvid = extract_bvid(bvid)
