@@ -13,9 +13,8 @@ API Key 与接口地址只从本地配置文件读取（./config/llm.json，权�
 import json
 import os
 
-PROVIDERS = ("local", "openai", "anthropic")
+PROVIDERS = ("openai", "anthropic")
 
-DEFAULT_LOCAL_MODEL = "Qwen/Qwen3-0.6B"
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-5"
 
 # 供前端下拉展示的 OpenAI 兼容服务预设
@@ -26,7 +25,6 @@ OPENAI_PRESETS = [
     {"label": "月之暗面 Kimi", "base_url": "https://api.moonshot.cn/v1", "model": "moonshot-v1-8k"},
     {"label": "智谱 GLM", "base_url": "https://open.bigmodel.cn/api/paas/v4", "model": "glm-4-flash"},
     {"label": "硅基流动 SiliconFlow", "base_url": "https://api.siliconflow.cn/v1", "model": "Qwen/Qwen3-8B"},
-    {"label": "本地 Ollama", "base_url": "http://localhost:11434/v1", "model": "qwen3:0.6b"},
 ]
 
 # 供前端下拉展示的 Anthropic 模型
@@ -50,8 +48,7 @@ def _defaults() -> dict:
     """内置默认值。base_url 一律留空，由用户显式填写——预置一个默认地址会让
     误配的请求静默发往某个真实服务端，而不是当场报错。"""
     return {
-        "provider": "local",
-        "local": {"model": DEFAULT_LOCAL_MODEL},
+        "provider": "anthropic",
         "openai": {"model": "", "api_key": "", "base_url": ""},
         "anthropic": {"model": DEFAULT_ANTHROPIC_MODEL, "api_key": "", "base_url": ""},
     }
@@ -70,7 +67,6 @@ def from_env() -> dict:
     if provider in PROVIDERS:
         cfg["provider"] = provider
 
-    # LLM_MODEL 作用于当前 provider（兼容旧版行为：provider=local 时即本地模型名）
     if os.environ.get("LLM_MODEL"):
         cfg[cfg["provider"]]["model"] = os.environ["LLM_MODEL"]
 
@@ -126,7 +122,7 @@ def override(
     if provider:
         patch["provider"] = provider
 
-    target = (provider or cfg.get("provider") or "local").strip().lower()
+    target = (provider or cfg.get("provider") or "anthropic").strip().lower()
     section = {k: v for k, v in
                (("model", model), ("api_key", api_key), ("base_url", base_url)) if v}
     if section and target in PROVIDERS:

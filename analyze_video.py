@@ -5,7 +5,6 @@
 用法:
     python analyze_video.py BV1xx411c7mD
     python analyze_video.py ./output/BV117411r7R1/
-    python analyze_video.py BV1xx411c7mD --model Qwen/Qwen3-0.6B
 """
 
 import argparse
@@ -196,8 +195,8 @@ def run_pipeline(data_dir: str, cfg: dict | None = None,
 def main():
     parser = argparse.ArgumentParser(description="B站视频弹幕+评论智能分析管线")
     parser.add_argument("input", help="BV 号或已采集数据的目录路径")
-    parser.add_argument("--provider", choices=["local", "openai", "anthropic"],
-                        help="LLM 后端 (默认: 读取配置文件/环境变量，缺省 local)")
+    parser.add_argument("--provider", choices=["openai", "anthropic"],
+                        help="LLM 后端 (默认: 读取配置文件/环境变量，缺省 anthropic)")
     parser.add_argument("--model", type=str, help="模型名称，覆盖配置")
     parser.add_argument("--api-key", type=str,
                         help="API Key，覆盖配置（更推荐用环境变量，避免出现在 shell 历史里）")

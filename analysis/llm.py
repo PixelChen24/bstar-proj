@@ -1,7 +1,6 @@
-"""LLM 后端封装：本地 transformers / OpenAI 兼容接口 / Anthropic Messages API
+"""LLM 后端封装：OpenAI 兼容接口 / Anthropic Messages API
 
-三个后端共用 chat(prompt) -> str 接口，依赖全部懒加载：
-走 API 时不需要装 torch，走本地时不需要装 anthropic。
+两个后端共用 chat(prompt) -> str 接口。
 """
 
 import re
@@ -40,9 +39,7 @@ def init_backend(cfg: dict | None = None, force: bool = False) -> str:
     section = cfg[provider]
 
     print(f"🤖 正在初始化 LLM 后端: {provider}")
-    if provider == "local":
-        _backend = _LocalBackend(section)
-    elif provider == "openai":
+    if provider == "openai":
         _backend = _OpenAIBackend(section)
     elif provider == "anthropic":
         _backend = _AnthropicBackend(section)
@@ -81,9 +78,7 @@ def test_connection(cfg: dict) -> dict:
     section = cfg[provider]
     t0 = time.time()
     try:
-        if provider == "local":
-            backend = _LocalBackend(section)
-        elif provider == "openai":
+        if provider == "openai":
             backend = _OpenAIBackend(section)
         else:
             backend = _AnthropicBackend(section)
@@ -104,63 +99,6 @@ def _strip_think_tags(text: str) -> str:
     text = re.sub(r"<(think|thinking)>.*?</\1>", "", text, flags=re.DOTALL)
     text = re.sub(r"<(think|thinking)>.*$", "", text, flags=re.DOTALL)
     return text.strip()
-
-
-# ─── 本地 transformers ──────────────────────────────────────
-
-class _LocalBackend:
-    def __init__(self, section: dict):
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-
-        self._torch = torch
-        model_name = section["model"]
-
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-            device_map="auto" if self.device == "cuda" else None,
-            trust_remote_code=True,
-        )
-        self.model.eval()
-
-        mem = torch.cuda.memory_allocated() / 1024**2 if self.device == "cuda" else 0
-        mem_str = f"，显存 {mem:.0f} MB" if mem else ""
-        self.label = f"本地模型 {model_name} @ {self.device}{mem_str}"
-
-    def chat(self, prompt: str, max_new_tokens: int, temperature: float) -> str:
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ]
-
-        # Qwen3 支持 enable_thinking=False 跳过思考过程，直接输出回答
-        try:
-            text = self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True, enable_thinking=False,
-            )
-        except TypeError:
-            # 非 Qwen3 系模板不接受 enable_thinking
-            text = self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True,
-            )
-
-        inputs = self.tokenizer(text, return_tensors="pt").to(self.model.device)
-
-        with self._torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=max(temperature, 0.01),
-                top_p=0.9,
-                do_sample=temperature > 0,
-                pad_token_id=self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
-            )
-
-        new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
-        return self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
 
 # ─── OpenAI 兼容接口 ────────────────────────────────────────

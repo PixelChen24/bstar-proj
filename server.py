@@ -3,7 +3,6 @@
 弹幕评论区智能分析 · API 服务
 
 启动:
-    export HF_ENDPOINT=https://hf-mirror.com
     python server.py
     # 打开 http://localhost:8000
 """

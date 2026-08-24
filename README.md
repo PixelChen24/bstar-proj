@@ -106,24 +106,24 @@ python server.py
 支持三种后端。API Key 和接口地址只认配置文件 `config/llm.json`；
 其余非敏感项（后端类型、模型名）可用环境变量，优先级为 **配置文件 > 环境变量 > 默认值**。
 
-| 后端 | 说明 | 额外依赖 |
-|------|------|----------|
-| `local` | 本地 HuggingFace 模型（默认 Qwen3-0.6B） | GPU + `torch`、`transformers` |
-| `openai` | 任何兼容 OpenAI `/chat/completions` 的服务 | 无（只用 `requests`） |
-| `anthropic` | Anthropic Messages API | `anthropic` SDK |
+| 后端          | 说明                                        | 额外依赖                         |
+| ------------- | ------------------------------------------- | -------------------------------- |
+| `local`     | 本地 HuggingFace 模型（默认 Qwen3-0.6B）    | GPU +`torch`、`transformers` |
+| `openai`    | 任何兼容 OpenAI`/chat/completions` 的服务 | 无（只用`requests`）           |
+| `anthropic` | Anthropic Messages API                      | `anthropic` SDK                |
 
 `openai` 后端已内置这些服务的预设：OpenAI、DeepSeek、阿里云百炼（通义）、月之暗面 Kimi、
 智谱 GLM、硅基流动 SiliconFlow、本地 Ollama。
 
 ### 环境变量
 
-| 变量 | 说明 |
-|------|------|
-| `LLM_PROVIDER` | `local` / `openai` / `anthropic`（默认 `local`） |
-| `LLM_MODEL` | 当前后端的模型名 |
-| `LLM_CONFIG_PATH` | 配置文件路径（默认 `./config/llm.json`） |
-| `ALLOW_REMOTE_CONFIG` | 设为 `1` 才允许非本机修改配置，默认关闭 |
-| `HF_ENDPOINT` | HuggingFace 镜像地址（仅 `local` 后端需要） |
+| 变量                    | 说明                                                     |
+| ----------------------- | -------------------------------------------------------- |
+| `LLM_PROVIDER`        | `local` / `openai` / `anthropic`（默认 `local`） |
+| `LLM_MODEL`           | 当前后端的模型名                                         |
+| `LLM_CONFIG_PATH`     | 配置文件路径（默认`./config/llm.json`）                |
+| `ALLOW_REMOTE_CONFIG` | 设为`1` 才允许非本机修改配置，默认关闭                 |
+| `HF_ENDPOINT`         | HuggingFace 镜像地址（仅`local` 后端需要）             |
 
 注意这里**没有** `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `*_BASE_URL`。这几个名字在开发机上
 经常已被别的工具占用（例如各类 CLI 会设置 `ANTHROPIC_BASE_URL` 指向内部网关），
@@ -144,14 +144,14 @@ API Key 只有一个来源：`config/llm.json`（权限 `0600`）。网页面板
 
 ## API 接口
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/` | Web 界面 |
-| GET | `/api/analyze/stream?bvid=xxx` | SSE 流式分析（采集+分析+实时进度） |
-| GET | `/api/report/{bvid}` | 获取已有报告（缓存） |
-| GET | `/api/llm/config` | 读取当前模型配置（Key 已脱敏） |
-| POST | `/api/llm/config` | 保存模型配置（默认仅本机） |
-| POST | `/api/llm/test` | 测试模型连通性（默认仅本机） |
+| 方法 | 路径                             | 说明                               |
+| ---- | -------------------------------- | ---------------------------------- |
+| GET  | `/`                            | Web 界面                           |
+| GET  | `/api/analyze/stream?bvid=xxx` | SSE 流式分析（采集+分析+实时进度） |
+| GET  | `/api/report/{bvid}`           | 获取已有报告（缓存）               |
+| GET  | `/api/llm/config`              | 读取当前模型配置（Key 已脱敏）     |
+| POST | `/api/llm/config`              | 保存模型配置（默认仅本机）         |
+| POST | `/api/llm/test`                | 测试模型连通性（默认仅本机）       |
 
 ## 输出结构
 
@@ -298,11 +298,11 @@ docker compose up -d
 未登录时评论接口只返回**降级响应**：无论评论区实际有多少条，一律只给 3 条根评论。
 实测三个视频，`sort=1`（热度）都只回 3 条，`sort=0`（时间）回 0 条：
 
-| 视频 | 评论区总数 | `sort=1` | `sort=0` |
-|------|-----------|----------|----------|
-| BV1xx411c7mD | 89044 | 3 条 | 0 条 |
-| BV1G48M6XEBt | 19176 | 3 条 | 0 条 |
-| BV1yj8T6zE1N | 23203 | 3 条 | 0 条 |
+| 视频         | 评论区总数 | `sort=1` | `sort=0` |
+| ------------ | ---------- | ---------- | ---------- |
+| BV1xx411c7mD | 89044      | 3 条       | 0 条       |
+| BV1G48M6XEBt | 19176      | 3 条       | 0 条       |
+| BV1yj8T6zE1N | 23203      | 3 条       | 0 条       |
 
 换排序、去掉 `nohot` 参数都无效 —— 这不是排序策略问题，要拿到完整评论**必须带登录态**：
 
