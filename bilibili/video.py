@@ -21,6 +21,15 @@ HEADERS = {
     "Referer": "https://www.bilibili.com",
 }
 
+# 登录态（可选）。未登录时评论接口只回降级响应——实测评论区上万条的视频
+# 也只返回 3 条根评论，且换排序无效——所以要拿到完整评论必须带 Cookie。
+# 取值方式：浏览器登录 B站 → 开发者工具 → Application → Cookies → 复制 SESSDATA。
+# 这是账号凭据，请用环境变量传入，不要写进代码或提交到仓库。
+SESSDATA = os.environ.get("BILIBILI_SESSDATA", "").strip()
+if SESSDATA:
+    HEADERS["Cookie"] = f"SESSDATA={SESSDATA}"
+    print("🔑 已启用 B站登录态（BILIBILI_SESSDATA）")
+
 # BV 号正则
 BV_PATTERN = re.compile(r"BV[a-zA-Z0-9]{10}")
 

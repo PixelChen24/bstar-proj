@@ -74,7 +74,10 @@ python fetch_video.py <BV号或链接> [选项]
   --delay FLOAT       请求间隔秒数 (默认: 0.3)
   --skip-danmaku      跳过弹幕采集
   --skip-comments     跳过评论采集
+  --comment-sort N    评论排序: 0=按时间 1=按热度 (默认: 1)
 ```
+
+> 未登录时评论接口只返回降级响应，换排序也绕不过去，详见下文「评论采集限制」。
 
 ### analyze_video.py — 智能分析
 
@@ -164,11 +167,12 @@ output/{BV号}/
 
 ```json
 {
-  "video":    { "title", "up", "play", "dm", "cm" },
+  "video":    { "title", "up", "play", "dm", "cm", "bvid", "cover", "duration" },
   "dmThemes": [{ "n": "主题名", "c": 数量, "t": "时段" }],
   "peaks":    [{ "tm": "时间", "x": "倍数", "n": 数量, "s": "叙事" }],
   "cmThemes": [{ "n": "主题名", "c": 数量, "pct": 占比, "dis": "争议度",
-                 "q": [{ "t": "引文", "l": 赞数, "r": 回复数, "k": "pro/con" }],
+                 "q": [{ "t": "引文", "l": 赞数, "r": 回复数, "k": "pro/con",
+                         "why": ["入选理由标签"] }],
                  "note": "编辑注释" }],
   "slots":    [{ "h": "问题", "p": "回答", "r": "溯源" }],
   "acts":     [{ "t": "建议", "s": "依据" }],
@@ -289,11 +293,34 @@ docker compose up -d
   - [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) (nvidia-docker)
   - NVIDIA GPU（Qwen3-0.6B 需约 1.1GB 显存）
 
+## 评论采集限制
+
+未登录时评论接口只返回**降级响应**：无论评论区实际有多少条，一律只给 3 条根评论。
+实测三个视频，`sort=1`（热度）都只回 3 条，`sort=0`（时间）回 0 条：
+
+| 视频 | 评论区总数 | `sort=1` | `sort=0` |
+|------|-----------|----------|----------|
+| BV1xx411c7mD | 89044 | 3 条 | 0 条 |
+| BV1G48M6XEBt | 19176 | 3 条 | 0 条 |
+| BV1yj8T6zE1N | 23203 | 3 条 | 0 条 |
+
+换排序、去掉 `nohot` 参数都无效 —— 这不是排序策略问题，要拿到完整评论**必须带登录态**：
+
+```bash
+# 浏览器登录 B站 → 开发者工具 → Application → Cookies → 复制 SESSDATA
+export BILIBILI_SESSDATA=你的SESSDATA值
+python fetch_video.py BV117411r7R1 --max-comments 500
+```
+
+`SESSDATA` 是账号凭据，只用环境变量传入，不要写进代码或提交到仓库。
+
+子评论不受此限制，未登录也能正常拉取（上面第一个视频拿到了 2814 条），所以
+不带登录态时分析仍能跑，只是样本以子评论为主、缺少高赞根评论。
+
 ## 注意事项
 
 - 用本地模型时首次运行会从 HuggingFace 下载 Qwen3-0.6B（约 1.2GB），国内环境需设置
   `export HF_ENDPOINT=https://hf-mirror.com`；走云端 API 则无需下载，也不必安装 torch
 - 本服务没有鉴权，模型配置接口默认只接受本机请求，详见上文「关于密钥安全」
-- 无需 B站登录态，使用公开 API
 - 弹幕接口有实时池上限（约 1200 条），历史弹幕需登录态
-- 未登录时评论按热度排序可能只返回少量根评论，子评论可正常拉取
+- 评论采集需登录态才能拿到完整数据，详见上文「评论采集限制」

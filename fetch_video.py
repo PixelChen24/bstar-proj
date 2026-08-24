@@ -60,6 +60,11 @@ def main():
         "--skip-comments", action="store_true",
         help="跳过评论采集",
     )
+    parser.add_argument(
+        "--comment-sort", type=int, choices=[0, 1], default=1,
+        help="评论排序: 0=按时间 1=按热度 (默认: 1)。"
+             "未登录时按热度常只返回少量根评论，此时会自动回退到按时间",
+    )
 
     args = parser.parse_args()
 
@@ -105,6 +110,7 @@ def main():
                 video_info["aid"],
                 max_comments=args.max_comments,
                 delay=args.delay,
+                sort=args.comment_sort,
             )
             save_json(comments_data, os.path.join(output_dir, "comments.json"))
         except Exception as e:

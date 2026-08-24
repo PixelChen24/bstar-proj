@@ -1,5 +1,6 @@
-"""评论分析：主题聚类 + 情感/立场分析"""
+"""评论分析：主题聚类 + 高价值反馈筛选 + 情感/立场分析"""
 
+import math
 from collections import defaultdict
 import jieba
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -99,14 +100,71 @@ def cluster_comments(comments: list[dict]) -> dict[int, list[dict]]:
     return dict(clusters)
 
 
+# ─── 高价值反馈筛选 ─────────────────────────────────────────
+#
+# 除点赞外，还纳入回复数、用户等级、UP 主互动。这些字段采集层已经落盘
+# （见 bilibili/comment.py 的 _extract_comment），此前只用于展示。
+# 点赞和回复数取 log，因为两者都是长尾分布，线性加权会让个别爆款评论
+# 淹没掉其他信号。
+
+W_LIKE = 2.0       # 点赞：主信号
+W_RCOUNT = 1.5     # 回复数：讨论热度，对应 PRD 的「高回复评论」
+W_LEVEL = 0.5      # 用户等级 0-6：老用户的反馈更可能有参考价值
+W_UP_LIKE = 2.0    # UP 主点赞（闪电）
+W_UP_REPLY = 3.0   # UP 主回复：最强信号，说明 UP 主自己就认为值得回应
+
+
+def _reply_count(c: dict) -> int:
+    """回复数。子评论没有 rcount 字段，退回已抓到的 replies 长度。"""
+    return c.get("rcount", len(c.get("replies", [])))
+
+
+def value_score(c: dict) -> float:
+    """评论的高价值得分。"""
+    return (
+        W_LIKE * math.log1p(max(c.get("like", 0), 0))
+        + W_RCOUNT * math.log1p(max(_reply_count(c), 0))
+        + W_LEVEL * min(max(c.get("level", 0), 0), 6)
+        + (W_UP_LIKE if c.get("up_like") else 0)
+        + (W_UP_REPLY if c.get("up_reply") else 0)
+    )
+
+
+def value_reasons(c: dict) -> list[str]:
+    """入选理由标签，供前端展示「为什么这条被选中」。"""
+    reasons = []
+    if c.get("up_reply"):
+        reasons.append("UP主回复")
+    if c.get("up_like"):
+        reasons.append("UP主点赞")
+
+    like = c.get("like", 0)
+    if like >= 10000:
+        reasons.append(f"{like / 10000:.1f}w赞")
+    elif like >= 1000:
+        reasons.append(f"{like / 1000:.1f}k赞")
+    elif like > 0:
+        reasons.append(f"{like}赞")
+
+    rcount = _reply_count(c)
+    if rcount >= 5:
+        reasons.append(f"{rcount}条回复")
+
+    level = c.get("level", 0)
+    if level >= 5:
+        reasons.append(f"L{level}")
+
+    return reasons
+
+
 # ─── 构建主题 ───────────────────────────────────────────────
 
 def build_comment_theme(members: list[dict], total_comments: int) -> dict | None:
     """为一个评论簇构建完整的主题对象。"""
 
-    # 按点赞排序，选代表性评论
-    sorted_members = sorted(members, key=lambda c: c.get("like", 0), reverse=True)
-    top_quotes = sorted_members[:5]  # 取前 5 条高赞
+    # 按高价值得分排序，选代表性评论
+    sorted_members = sorted(members, key=value_score, reverse=True)
+    top_quotes = sorted_members[:5]
 
     # LLM 生成主题名
     quote_texts = [q["content"][:80] for q in top_quotes[:3]]
@@ -128,8 +186,9 @@ def build_comment_theme(members: list[dict], total_comments: int) -> dict | None
         quotes_with_stance.append({
             "t": q["content"][:100],
             "l": q.get("like", 0),
-            "r": q.get("rcount", len(q.get("replies", []))),
+            "r": _reply_count(q),
             "k": stance,
+            "why": value_reasons(q),
         })
 
     # 计算争议度

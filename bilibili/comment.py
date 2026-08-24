@@ -10,10 +10,15 @@ API_REPLY = "http://api.bilibili.com/x/v2/reply"
 API_REPLY_REPLY = "http://api.bilibili.com/x/v2/reply/reply"
 
 
+SORT_TIME = 0  # 按时间倒序
+SORT_HOT = 1   # 按热度
+
+
 def fetch_comments(
     aid: int,
     max_comments: int = 500,
     delay: float = 0.3,
+    sort: int = SORT_HOT,
 ) -> dict:
     """
     获取视频评论（含子评论）。
@@ -22,6 +27,10 @@ def fetch_comments(
         aid: 视频 avid
         max_comments: 最多采集的根评论条数
         delay: 请求间隔秒数
+        sort: 排序方式，0=按时间 1=按热度
+
+    未登录时按热度排序往往只返回少量根评论（几条），此时会自动改用按时间
+    排序重采一次——分析层需要足够样本量，而排序方式本身不影响后续聚类。
 
     返回:
         {
@@ -29,50 +38,21 @@ def fetch_comments(
             "total_count": int,       # 根评论总数（B站返回）
             "fetched_root": int,      # 实际采集的根评论数
             "fetched_replies": int,   # 实际采集的子评论数
+            "sort": int,              # 实际生效的排序方式
             "comments": [...]
         }
     """
-    print(f"\n📝 正在采集评论 (aid={aid}, 上限 {max_comments} 条根评论)...")
+    all_comments, total_count = _fetch_root_comments(aid, max_comments, delay, sort)
 
-    all_comments = []
-    total_count = 0
+    # 未登录时接口只回降级响应：实测三个视频（评论区 8.9w / 2.3w / 1.9w）
+    # 按热度一律只返回 3 条根评论，按时间（sort=0）返回 0 条。换排序绕不过去，
+    # 必须带登录态，所以这里只做提示，不再自动重试。
+    if total_count > len(all_comments) * 3 and len(all_comments) < 50:
+        print(f"  ⚠ 仅取到 {len(all_comments)} 条根评论，但评论区共 {total_count} 条。"
+              f"这是未登录限制，设置环境变量 BILIBILI_SESSDATA 可拿到完整评论"
+              f"（子评论不受影响，仍可正常拉取）")
+
     fetched_replies = 0
-    page_num = 1
-    page_size = 20
-
-    while len(all_comments) < max_comments:
-        print(f"  ⏳ 第 {page_num} 页...", end="", flush=True)
-
-        data = _fetch_reply_page(aid, sort=1, pn=page_num, ps=page_size)
-        if data is None:
-            print(" 请求失败，停止")
-            break
-
-        # 第一页获取总数
-        if page_num == 1:
-            page_info = data.get("page", {})
-            total_count = page_info.get("count", 0)
-            print(f" (评论区共 {total_count} 条根评论)", end="")
-
-        replies = data.get("replies")
-        if not replies:
-            print(" 无更多评论")
-            break
-
-        page_comments = []
-        for r in replies:
-            comment = _extract_comment(r)
-            page_comments.append(comment)
-
-        all_comments.extend(page_comments)
-        print(f" +{len(page_comments)} 条 (累计 {len(all_comments)})")
-
-        page_num += 1
-        time.sleep(delay)
-
-    # 如果超出上限，截断
-    if len(all_comments) > max_comments:
-        all_comments = all_comments[:max_comments]
 
     # 拉取子评论
     print(f"  📎 正在拉取子评论...")
@@ -102,11 +82,51 @@ def fetch_comments(
         "total_count": total_count,
         "fetched_root": len(all_comments),
         "fetched_replies": fetched_replies,
+        "sort": sort,
         "comments": all_comments,
     }
     print(f"  ✔ 评论采集完成: {result['fetched_root']} 条根评论, "
           f"{result['fetched_replies']} 条子评论")
     return result
+
+
+def _fetch_root_comments(
+    aid: int, max_comments: int, delay: float, sort: int
+) -> tuple[list[dict], int]:
+    """按指定排序翻页拉取根评论。返回 (评论列表, 评论区根评论总数)。"""
+    label = "热度" if sort == SORT_HOT else "时间"
+    print(f"\n📝 正在采集评论 (aid={aid}, 按{label}排序, 上限 {max_comments} 条根评论)...")
+
+    all_comments = []
+    total_count = 0
+    page_num = 1
+    page_size = 20
+
+    while len(all_comments) < max_comments:
+        print(f"  ⏳ 第 {page_num} 页...", end="", flush=True)
+
+        data = _fetch_reply_page(aid, sort=sort, pn=page_num, ps=page_size)
+        if data is None:
+            print(" 请求失败，停止")
+            break
+
+        # 第一页获取总数
+        if page_num == 1:
+            total_count = data.get("page", {}).get("count", 0)
+            print(f" (评论区共 {total_count} 条根评论)", end="")
+
+        replies = data.get("replies")
+        if not replies:
+            print(" 无更多评论")
+            break
+
+        all_comments.extend(_extract_comment(r) for r in replies)
+        print(f" +{len(replies)} 条 (累计 {len(all_comments)})")
+
+        page_num += 1
+        time.sleep(delay)
+
+    return all_comments[:max_comments], total_count
 
 
 def _fetch_reply_page(

@@ -297,7 +297,7 @@ th{font-size:12px;color:var(--ink3);font-weight:500;background:var(--bg)}
 
     <div class="panel">
       <div class="vhead">
-        <div class="cover">封面</div>
+        <div class="cover" id="vcover">封面</div>
         <div style="flex:1">
           <div style="font-size:16px;font-weight:600" id="vtitle"></div>
           <div class="tiny" id="vup" style="margin-top:3px"></div>
@@ -324,8 +324,7 @@ th{font-size:12px;color:var(--ink3);font-weight:500;background:var(--bg)}
       <h2 style="margin-top:6px">Top 5 可执行改进建议</h2>
       <div class="acts" id="acts"></div>
       <div style="margin-top:18px;display:flex;gap:10px">
-        <button class="btn ghost" onclick="alert('导出 PNG')">导出图片</button>
-        <button class="btn ghost" onclick="alert('导出 Markdown')">导出 Markdown</button>
+        <button class="btn ghost" id="export-md">导出 Markdown</button>
         <button class="btn ghost" id="again">重新演示</button>
       </div>
     </div>
@@ -343,6 +342,63 @@ $('#again').onclick=()=>{
   $('#result').classList.add('hide'); $('#entry').classList.remove('hide');
   window.scrollTo({top:0,behavior:'smooth'});
 };
+$('#export-md').onclick=exportMarkdown;
+
+/* ─── 导出 Markdown ────────────────────────────────────── */
+
+function exportMarkdown(){
+  if(!DATA){ alert('请先生成报告'); return; }
+  const D=DATA, v=D.video, L=[];
+
+  L.push(`# ${v.title} · 观众复盘报告`,'');
+  L.push(`- UP主：${v.up}`);
+  L.push(`- 播放 ${v.play} ｜ 弹幕 ${v.dm} ｜ 评论 ${v.cm}`);
+  if(v.duration) L.push(`- 时长：${fmtDur(v.duration)}`);
+  if(v.bvid) L.push(`- 稿件：https://www.bilibili.com/video/${v.bvid}`);
+  if(D.meta) L.push(`- 分析耗时 ${D.meta.elapsed||'-'}s ｜ 模型 ${D.meta.model||'-'}`);
+  L.push('');
+
+  if((D.slots||[]).length){
+    L.push('## 一页复盘结论','');
+    D.slots.forEach(s=>L.push(`**${s.h}**`,'',s.p,'',`> ${s.r}`,''));
+  }
+
+  if((D.acts||[]).length){
+    L.push('## Top 可执行改进建议','');
+    D.acts.forEach((a,i)=>L.push(`${i+1}. ${a.t}`,`   - 依据：${a.s}`));
+    L.push('');
+  }
+
+  if((D.dmThemes||[]).length){
+    L.push('## 弹幕反馈','','| 主题 | 次数 | 集中时段 |','|---|---|---|');
+    D.dmThemes.forEach(t=>L.push(`| ${t.n} | ${t.c} | ${t.t} |`));
+    L.push('');
+  }
+
+  if((D.peaks||[]).length){
+    L.push('## 高能时刻','');
+    D.peaks.forEach(p=>L.push(`- **${p.tm}**（密度 ${p.x}，${p.n} 条弹幕）${p.s?' — '+p.s:''}`));
+    L.push('');
+  }
+
+  if((D.cmThemes||[]).length){
+    L.push('## 评论总结','');
+    D.cmThemes.forEach(t=>{
+      L.push(`### ${t.n}　${t.c} 条${t.dis?`（争议度 ${t.dis}）`:''}`,'');
+      (t.q||[]).forEach(q=>{
+        const tags=[q.k==='con'?'反对面':'支持面',...(q.why||[])].join('｜');
+        L.push(`> ${q.t}`,`> — ↑${q.l} ↩${q.r}　${tags}`,'');
+      });
+      if(t.note) L.push(`*${t.note}*`,'');
+    });
+  }
+
+  const name=`复盘报告_${(v.bvid||'report')}.md`;
+  const url=URL.createObjectURL(new Blob([L.join('\n')],{type:'text/markdown;charset=utf-8'}));
+  const a=document.createElement('a');
+  a.href=url; a.download=name; a.click();
+  URL.revokeObjectURL(url);
+}
 
 /* ─── 模型设置 ─────────────────────────────────────────── */
 
@@ -543,6 +599,17 @@ function render(D){
   R.classList.remove('hide');
   $('#vtitle').textContent = v.title;
   $('#vup').textContent = v.up;
+
+  // B站图片有防盗链，必须去掉 Referer 才能加载
+  const cov = $('#vcover');
+  if(v.cover){
+    cov.innerHTML = `<img src="${v.cover}" referrerpolicy="no-referrer" alt="封面"
+      style="width:100%;height:100%;object-fit:cover;border-radius:8px"
+      onerror="this.parentNode.textContent='封面'">`;
+  }else{
+    cov.textContent = '封面';
+  }
+
   $('#s-play').textContent = v.play;
   $('#s-dm').textContent = v.dm.toLocaleString();
   $('#s-cm').textContent = v.cm.toLocaleString();
@@ -581,6 +648,22 @@ function render(D){
   R.scrollIntoView({behavior:'smooth'});
 }
 
+/* "mm:ss" -> 秒 */
+function hms2sec(tm){
+  const p = String(tm||'').split(':').map(Number);
+  if(p.length === 3) return (p[0]*3600 + p[1]*60 + p[2]) || 0;
+  if(p.length === 2) return (p[0]*60 + p[1]) || 0;
+  return 0;
+}
+
+/* 秒 -> "mm:ss" / "h:mm:ss" */
+function fmtDur(sec){
+  sec = Math.round(sec||0);
+  const h = Math.floor(sec/3600), m = Math.floor(sec%3600/60), s = sec%60;
+  const pad = n => String(n).padStart(2,'0');
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
 function drill(k){
   const D = DATA;
   const Dr = $('#drill');
@@ -590,24 +673,25 @@ function drill(k){
       ${(D.dmThemes||[]).map(t=>`<tr><td>${t.n}</td><td><b>${t.c}</b> 条</td><td class="muted">${t.t}</td></tr>`).join('')}</table>`;
   }
   else if(k==='pk'){
-    const totalDur = 480; // 近似
+    // 用真实视频时长定位峰值；缺失时退回按最大峰值时间点估算
+    const peaks = D.peaks || [];
+    const maxSec = peaks.reduce((m,p)=>Math.max(m, hms2sec(p.tm)), 0);
+    const totalDur = (D.video && D.video.duration) || Math.max(maxSec * 1.2, 60);
+
     const cols=Array.from({length:80},(_,i)=>{
       let h = 8;
-      if(D.peaks){
-        for(const p of D.peaks){
-          const parts = p.tm.split(':');
-          const sec = parseInt(parts[0])*60 + parseInt(parts[1]);
-          const idx = Math.floor(sec / totalDur * 80);
-          if(Math.abs(i - idx) <= 1) h = Math.min(58, parseFloat(p.x) * 8);
-        }
+      for(const p of peaks){
+        const idx = Math.floor(hms2sec(p.tm) / totalDur * 80);
+        if(Math.abs(i - idx) <= 1) h = Math.min(58, parseFloat(p.x) * 8);
       }
       const hot = h > 20;
       return `<div class="col ${hot?'hot':''}" style="left:${i*1.25}%;height:${h}px"></div>`;
     }).join('');
+
     Dr.innerHTML=`<h2>高能时刻</h2>
       <div class="axis">${cols}</div>
-      <div class="tiny">横轴为视频进度，粉色为弹幕密度峰值区间</div>
-      ${(D.peaks||[]).map(p=>`<div class="peak"><div class="tm">${p.tm}</div>
+      <div class="tiny">横轴为视频进度（全长 ${fmtDur(totalDur)}），粉色为弹幕密度峰值区间</div>
+      ${peaks.map(p=>`<div class="peak"><div class="tm">${p.tm}</div>
         <div><div><b>密度 ${p.x}</b>　<span class="muted">该区间 ${p.n} 条弹幕</span></div>
         <div style="margin-top:5px">${p.s||''}</div></div></div>`).join('')}`;
   }
@@ -625,7 +709,8 @@ function drill(k){
           <div class="theme-bd">
             ${(t.q||[]).map(q=>`<div class="quote ${q.k}">${q.t}
               <div class="quote-meta"><span>↑ ${q.l}</span><span>↩ ${q.r}</span>
-              <span class="tiny">${q.k==='con'?'反对面':'支持面'}</span></div></div>`).join('')}
+              <span class="tiny">${q.k==='con'?'反对面':'支持面'}</span>
+              ${(q.why||[]).map(w=>`<span class="badge">${w}</span>`).join('')}</div></div>`).join('')}
             ${t.note?`<div class="note">${t.note}</div>`:''}
           </div>
         </div>`).join('')}`;
