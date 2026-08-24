@@ -15,11 +15,36 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
+def _strip_code_fences(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+    return text.strip()
+
+
+def _load_json_payload(text: str):
+    """从 LLM 回复中提取 JSON 对象。"""
+    cleaned = _strip_code_fences(text)
+    candidates = [cleaned]
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidates.append(cleaned[start:end + 1])
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except Exception:
+            continue
+    return None
+
+
 def generate_report(
     dm_themes: list[dict],
     peaks: list[dict],
     cm_themes: list[dict],
     video_info: dict,
+    on_progress=None,
 ) -> tuple[list[dict], list[dict]]:
     """
     生成复盘报告。
@@ -27,16 +52,16 @@ def generate_report(
     返回 (slots, acts)
     """
     print("\n📊 正在生成复盘报告...")
+    if on_progress:
+        on_progress(4, "正在汇总复盘报告...", "", 0.1)
 
     # 构建分析上下文摘要
     context = _build_context(dm_themes, peaks, cm_themes, video_info)
 
-    # 1. 生成 5 个固定问题的结论
-    slots = generate_slots(context, dm_themes, cm_themes)
-
-    # 2. 生成 Top5 可执行建议
-    acts = generate_acts(context)
-
+    # 合并生成 5 个固定问题 + Top5 建议，原来这里是 6 次 LLM 调用。
+    slots, acts = generate_report_bundle(context, dm_themes, cm_themes)
+    if on_progress:
+        on_progress(4, f"复盘报告完成：{len(slots)} 条结论 / {len(acts)} 条建议", "", 1.0)
     return slots, acts
 
 
@@ -85,6 +110,127 @@ SLOT_QUESTIONS = [
 ]
 
 
+def _slot_ref_count(answer: str, dm_themes: list[dict], cm_themes: list[dict]) -> int:
+    ref_count = 0
+    all_themes = (dm_themes or []) + (cm_themes or [])
+    for t in all_themes:
+        name = t.get("n", "")
+        if name and name[:3] in answer:
+            ref_count += 1
+    return max(ref_count, 1)
+
+
+def generate_report_bundle(
+    context: str, dm_themes: list[dict], cm_themes: list[dict]
+) -> tuple[list[dict], list[dict]]:
+    """一次 LLM 调用同时生成复盘结论和可执行建议。解析失败时会自动退回原逻辑。"""
+    print("  📝 合并生成复盘结论与 Top5 建议...")
+
+    questions = "\n".join(f"- {q['h']}：{q['hint']}" for q in SLOT_QUESTIONS)
+    prompt = (
+        "根据以下B站视频的弹幕和评论分析结果，一次性生成复盘报告。\n\n"
+        f"{context}\n\n"
+        "请严格输出 JSON，不要输出额外解释。\n"
+        "输出格式：\n"
+        "{\n"
+        "  \"slots\": [\n"
+        "    {\"h\":\"观众最喜欢什么\",\"p\":\"一句话结论，引用具体数据\"}\n"
+        "  ],\n"
+        "  \"acts\": [\n"
+        "    {\"t\":\"具体行动\",\"s\":\"对应的数据证据\"}\n"
+        "  ]\n"
+        "}\n\n"
+        "固定问题必须且只包含以下 5 个：\n"
+        f"{questions}\n\n"
+        "要求：\n"
+        "1. slots 每条 p 用一句话回答，并引用条数、时间点、争议度等具体数据。\n"
+        "2. acts 必须给 5 条具体可执行建议，t 是行动，s 是依据。\n"
+        "3. 不要使用 Markdown。\n"
+    )
+    raw = chat(prompt, max_new_tokens=700).strip()
+    payload = _load_json_payload(raw)
+
+    if isinstance(payload, dict):
+        slots = _normalize_slots(payload.get("slots"), dm_themes, cm_themes)
+        acts = _normalize_acts(payload.get("acts"))
+        if len(slots) == len(SLOT_QUESTIONS) and len(acts) >= 3:
+            for s in slots:
+                print(f"    ✔ {s['h']}: {s['p'][:40]}...")
+            for i, a in enumerate(acts[:5]):
+                print(f"    {i+1}. {a['t'][:40]}...")
+            return slots, acts[:5]
+
+    # 解析失败时仍保持可用：用本地规则生成，不再额外请求模型。
+    print("  ⚠ 合并报告解析失败，改用旧逻辑兜底")
+    return _fallback_report_bundle(context, dm_themes, cm_themes)
+
+
+def _normalize_slots(raw_slots, dm_themes: list[dict], cm_themes: list[dict]) -> list[dict]:
+    if not isinstance(raw_slots, list):
+        return []
+
+    ordered_answers = []
+    by_h = {}
+    for item in raw_slots:
+        if not isinstance(item, dict):
+            continue
+        h = str(item.get("h", "")).strip()
+        p = _strip_markdown(str(item.get("p", "")).strip())
+        if not p:
+            continue
+        ordered_answers.append(p)
+        if h:
+            by_h[h] = p
+
+    slots = []
+    used_answers = set()
+    for i, sq in enumerate(SLOT_QUESTIONS):
+        answer = by_h.get(sq["h"], "")
+        if not answer:
+            # 允许模型在标题上略有差异，按包含关系兜底匹配。
+            for h, p in by_h.items():
+                if p in used_answers:
+                    continue
+                if sq["h"] in h or h in sq["h"]:
+                    answer = p
+                    break
+        if not answer and i < len(ordered_answers):
+            # 标题不匹配时按输出顺序兜底，避免因为小标题变化触发 6 次回退调用。
+            answer = ordered_answers[i]
+        if not answer:
+            continue
+        used_answers.add(answer)
+        slots.append({
+            "h": sq["h"],
+            "p": answer,
+            "r": f"溯源 {_slot_ref_count(answer, dm_themes, cm_themes)} 个主题",
+        })
+    return slots
+
+
+def _normalize_acts(raw_acts) -> list[dict]:
+    if not isinstance(raw_acts, list):
+        return []
+    acts = []
+    for item in raw_acts:
+        if not isinstance(item, dict):
+            continue
+        t = _strip_markdown(str(item.get("t", "")).strip())
+        s = _strip_markdown(str(item.get("s", "")).strip())
+        if t:
+            acts.append({"t": t, "s": s or "综合分析"})
+    return acts[:5]
+
+
+def _fallback_report_bundle(context: str, dm_themes: list[dict], cm_themes: list[dict]) -> tuple[list[dict], list[dict]]:
+    """合并输出解析失败时的兜底，保持可用性。"""
+    slots = generate_slots(context, dm_themes, cm_themes)
+    acts = generate_acts(context)
+    return slots, acts
+
+
+# 下面两个函数保留作合并 JSON 解析失败时的兜底。
+
 def generate_slots(
     context: str, dm_themes: list[dict], cm_themes: list[dict]
 ) -> list[dict]:
@@ -102,19 +248,10 @@ def generate_slots(
         answer = chat(prompt, max_new_tokens=100)
         answer = answer.strip()
 
-        # 计算溯源主题数
-        ref_count = 0
-        all_themes = (dm_themes or []) + (cm_themes or [])
-        for t in all_themes:
-            name = t.get("n", "")
-            if name and name[:3] in answer:
-                ref_count += 1
-        ref_count = max(ref_count, 1)
-
         slots.append({
             "h": sq["h"],
             "p": _strip_markdown(answer),
-            "r": f"溯源 {ref_count} 个主题",
+            "r": f"溯源 {_slot_ref_count(answer, dm_themes, cm_themes)} 个主题",
         })
         print(f"    ✔ {sq['h']}: {answer[:40]}...")
 

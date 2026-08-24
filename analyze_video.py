@@ -23,6 +23,7 @@ from analysis.clean import clean_danmakus, clean_comments
 from analysis.danmaku_analysis import analyze_danmaku
 from analysis.comment_analysis import analyze_comments
 from analysis.report import generate_report
+from analysis.wordcloud import generate_word_clouds_from_records
 
 
 def load_json(filepath: str) -> dict:
@@ -71,7 +72,7 @@ def run_fetch(bvid: str, output_dir: str = "./output",
 
     # 弹幕
     t0 = time.time()
-    danmaku_data = fetch_danmaku(video_info["pages"], delay=delay)
+    danmaku_data = fetch_danmaku(video_info["pages"], delay=delay, aid=video_info.get("aid"))
     save_json(danmaku_data, os.path.join(data_dir, "danmaku.json"))
     _progress(0, f"拉取弹幕 {danmaku_data['total_count']} 条", f"{time.time()-t0:.1f}s")
 
@@ -102,10 +103,10 @@ def run_pipeline(data_dir: str, cfg: dict | None = None,
     logs = []
     cfg = cfg or load_config()
 
-    def _progress(stage, msg, extra=""):
+    def _progress(stage, msg, extra="", pct=None):
         logs.append([msg, extra])
         if on_progress:
-            on_progress(stage, msg, extra)
+            on_progress(stage, msg, extra, pct)
 
     # 1. 加载数据
     video_info = load_json(os.path.join(data_dir, "video_info.json"))
@@ -125,7 +126,7 @@ def run_pipeline(data_dir: str, cfg: dict | None = None,
 
     # 2. 初始化 LLM 后端
     backend_label = init_backend(cfg)
-    _progress(1, f"LLM 后端就绪：{backend_label}", "")
+    _progress(1, f"LLM 后端就绪：{backend_label}", "", 0.08)
 
     # 3. 清洗
     t0 = time.time()
@@ -139,28 +140,31 @@ def run_pipeline(data_dir: str, cfg: dict | None = None,
         dm_removed = dm_cs["total"] - dm_kept
         cm_removed = cm_cs["total"] - cm_kept
         _progress(1, f"清洗去重：过滤弹幕 {dm_removed} 条、评论 {cm_removed} 条",
-                  f"剩余 {dm_kept + cm_kept} 条")
+                  f"剩余 {dm_kept + cm_kept} 条", 1.0)
     else:
-        _progress(1, "跳过清洗", "")
+        _progress(1, "跳过清洗", "", 1.0)
 
-    # 4. 弹幕分析
+    # 4. 词云数据
+    word_clouds = generate_word_clouds_from_records(all_danmakus, all_comments)
+
+    # 5. 弹幕分析
     t0 = time.time()
-    dm_themes, peaks = analyze_danmaku(all_danmakus, video_info.get("duration", 0))
+    dm_themes, peaks = analyze_danmaku(all_danmakus, video_info.get("duration", 0), on_progress=on_progress)
     _progress(2, f"聚类得 {len(dm_themes)} 个弹幕主题 + {len(peaks)} 个峰值",
-              f"{time.time()-t0:.1f}s")
+              f"{time.time()-t0:.1f}s", 1.0)
 
-    # 5. 评论分析
+    # 6. 评论分析
     t0 = time.time()
-    cm_themes = analyze_comments(all_comments, comments_data.get("total_count", len(all_comments)))
+    cm_themes = analyze_comments(all_comments, comments_data.get("total_count", len(all_comments)), on_progress=on_progress)
     _progress(3, f"归纳为 {len(dm_themes)} 个弹幕主题 / {len(cm_themes)} 个评论主题",
-              f"{time.time()-t0:.1f}s")
+              f"{time.time()-t0:.1f}s", 1.0)
 
-    # 6. 报告生成
+    # 7. 报告生成
     t0 = time.time()
-    slots, acts = generate_report(dm_themes, peaks, cm_themes, video_info)
-    _progress(4, f"生成复盘报告与 Top{len(acts)} 建议", f"{time.time()-t0:.1f}s")
+    slots, acts = generate_report(dm_themes, peaks, cm_themes, video_info, on_progress=on_progress)
+    _progress(4, f"生成复盘报告与 Top{len(acts)} 建议", f"{time.time()-t0:.1f}s", 1.0)
 
-    # 7. 组装
+    # 8. 组装
     stat = video_info.get("stat", {})
     report = {
         "video": {
@@ -178,6 +182,7 @@ def run_pipeline(data_dir: str, cfg: dict | None = None,
         "cmThemes": cm_themes,
         "slots": slots,
         "acts": acts,
+        "wordClouds": word_clouds,
         "logs": logs,
         "meta": {
             "provider": cfg["provider"],

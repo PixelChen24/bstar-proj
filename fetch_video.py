@@ -96,7 +96,7 @@ def main():
     if not args.skip_danmaku:
         try:
             danmaku_data = fetch_danmaku(
-                video_info["pages"], delay=args.delay
+                video_info["pages"], delay=args.delay, aid=video_info.get("aid")
             )
             save_json(danmaku_data, os.path.join(output_dir, "danmaku.json"))
         except Exception as e:

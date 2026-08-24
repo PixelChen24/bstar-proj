@@ -193,7 +193,7 @@ data-pipeline/
 ├── README.md
 ├── bilibili/                     B站 API 封装
 │   ├── video.py                  视频信息
-│   ├── danmaku.py                弹幕采集 (XML)
+│   ├── danmaku.py                弹幕采集 (seg.so protobuf)
 │   └── comment.py                评论采集
 ├── analysis/                     分析模块
 │   ├── llm.py                    LLM 后端封装 (local/openai/anthropic)

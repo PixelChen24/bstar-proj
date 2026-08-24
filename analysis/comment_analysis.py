@@ -1,15 +1,21 @@
 """评论分析：主题聚类 + 高价值反馈筛选 + 情感/立场分析"""
 
+import json
 import math
+import re
 from collections import defaultdict
+
 import jieba
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 from .llm import chat
 
 
-def analyze_comments(comments: list[dict], total_comments: int) -> list[dict]:
+# ─── 基础分析 ───────────────────────────────────────────────
+
+
+def analyze_comments(comments: list[dict], total_comments: int, on_progress=None) -> list[dict]:
     """
     分析评论数据，返回 cmThemes 列表。
 
@@ -23,24 +29,38 @@ def analyze_comments(comments: list[dict], total_comments: int) -> list[dict]:
         print("  ⚠ 评论数量不足，跳过分析")
         return []
 
-    # 1. 主题聚类
+    if on_progress:
+        on_progress(3, "评论聚类中...", "", 0.18)
     clusters = cluster_comments(comments)
-
-    # 2. 为每个簇构建主题
-    cm_themes = []
-    for label, members in clusters.items():
+    theme_specs = []
+    for members in clusters.values():
         if len(members) < 2:
             continue
+        sorted_members = sorted(members, key=value_score, reverse=True)
+        top_quotes = sorted_members[:5]
+        theme_specs.append({
+            "members": members,
+            "quotes": top_quotes,
+            "samples": [q["content"][:80] for q in top_quotes[:4]],
+        })
 
-        theme = build_comment_theme(members, total_comments)
+    if not theme_specs:
+        return []
+
+    theme_specs.sort(key=lambda item: len(item["members"]), reverse=True)
+    if on_progress:
+        on_progress(3, f"批量分析 {len(theme_specs)} 个评论主题...", "", 0.68)
+    analyses = _batch_analyze_comment_themes(theme_specs)
+
+    cm_themes = []
+    for spec, analysis in zip(theme_specs, analyses):
+        theme = _build_theme_from_analysis(spec, analysis, total_comments)
         if theme:
             cm_themes.append(theme)
 
-    # 按数量排序
     cm_themes.sort(key=lambda t: t["c"], reverse=True)
-    cm_themes = cm_themes[:5]  # 最多 5 个主题
+    cm_themes = cm_themes[:5]
 
-    # 重新计算 pct：相对最大簇的百分比，最大簇=100
     if cm_themes:
         max_count = cm_themes[0]["c"]
         for t in cm_themes:
@@ -50,12 +70,14 @@ def analyze_comments(comments: list[dict], total_comments: int) -> list[dict]:
         dis_str = f" [争议度:{t['dis']}]" if t.get("dis") else ""
         print(f"    📌 {t['n']}: {t['c']} 条{dis_str}")
 
+    if on_progress:
+        on_progress(3, f"评论分析完成：{len(cm_themes)} 个主题", "", 1.0)
+
     return cm_themes
 
 
 # ─── 聚类 ───────────────────────────────────────────────────
 
-# 停用词
 _STOP_WORDS = {
     "的", "了", "是", "在", "我", "有", "和", "就", "不", "人", "都",
     "一", "一个", "上", "也", "很", "到", "说", "要", "去", "你",
@@ -101,17 +123,12 @@ def cluster_comments(comments: list[dict]) -> dict[int, list[dict]]:
 
 
 # ─── 高价值反馈筛选 ─────────────────────────────────────────
-#
-# 除点赞外，还纳入回复数、用户等级、UP 主互动。这些字段采集层已经落盘
-# （见 bilibili/comment.py 的 _extract_comment），此前只用于展示。
-# 点赞和回复数取 log，因为两者都是长尾分布，线性加权会让个别爆款评论
-# 淹没掉其他信号。
 
-W_LIKE = 2.0       # 点赞：主信号
-W_RCOUNT = 1.5     # 回复数：讨论热度，对应 PRD 的「高回复评论」
-W_LEVEL = 0.5      # 用户等级 0-6：老用户的反馈更可能有参考价值
-W_UP_LIKE = 2.0    # UP 主点赞（闪电）
-W_UP_REPLY = 3.0   # UP 主回复：最强信号，说明 UP 主自己就认为值得回应
+W_LIKE = 2.0
+W_RCOUNT = 1.5
+W_LEVEL = 0.5
+W_UP_LIKE = 2.0
+W_UP_REPLY = 3.0
 
 
 def _reply_count(c: dict) -> int:
@@ -131,7 +148,7 @@ def value_score(c: dict) -> float:
 
 
 def value_reasons(c: dict) -> list[str]:
-    """入选理由标签，供前端展示「为什么这条被选中」。"""
+    """入选理由标签，供前端展示。"""
     reasons = []
     if c.get("up_reply"):
         reasons.append("UP主回复")
@@ -157,43 +174,142 @@ def value_reasons(c: dict) -> list[str]:
     return reasons
 
 
-# ─── 构建主题 ───────────────────────────────────────────────
+# ─── LLM 解析与兜底 ─────────────────────────────────────────
 
-def build_comment_theme(members: list[dict], total_comments: int) -> dict | None:
-    """为一个评论簇构建完整的主题对象。"""
 
-    # 按高价值得分排序，选代表性评论
-    sorted_members = sorted(members, key=value_score, reverse=True)
-    top_quotes = sorted_members[:5]
+def _strip_markdown(text: str) -> str:
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"\*(.+?)\*", r"\1", text)
+    text = re.sub(r"__(.+?)__", r"\1", text)
+    text = re.sub(r"_(.+?)_", r"\1", text)
+    return text.strip()
 
-    # LLM 生成主题名
-    quote_texts = [q["content"][:80] for q in top_quotes[:3]]
-    sample_text = "\n".join(f"- {t}" for t in quote_texts)
+
+def _strip_code_fences(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+    return text.strip()
+
+
+def _load_json_payload(text: str):
+    cleaned = _strip_code_fences(text)
+    candidates = [cleaned]
+    obj_start = cleaned.find("{")
+    obj_end = cleaned.rfind("}")
+    if obj_start != -1 and obj_end != -1 and obj_end > obj_start:
+        candidates.append(cleaned[obj_start:obj_end + 1])
+    arr_start = cleaned.find("[")
+    arr_end = cleaned.rfind("]")
+    if arr_start != -1 and arr_end != -1 and arr_end > arr_start:
+        candidates.append(cleaned[arr_start:arr_end + 1])
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except Exception:
+            continue
+    return None
+
+
+def _normalize_stance(value) -> str:
+    s = str(value).strip().lower()
+    if not s:
+        return "pro"
+    if s in {"con", "反对", "反", "negative", "oppose", "no", "disagree"}:
+        return "con"
+    return "pro"
+
+
+def _heuristic_stance(text: str, theme_name: str = "") -> str:
+    t = f"{theme_name} {text}"
+    negative_tokens = ("不", "别", "差", "烂", "失望", "无聊", "太慢", "看不懂", "反对", "质疑", "离谱")
+    positive_tokens = ("喜欢", "支持", "好", "精彩", "感谢", "期待", "推荐", "有用", "学到了", "不错", "舒服")
+    neg_score = sum(1 for kw in negative_tokens if kw in t)
+    pos_score = sum(1 for kw in positive_tokens if kw in t)
+    return "con" if neg_score > pos_score else "pro"
+
+
+def _fallback_theme_name(samples: list[str]) -> str:
+    if not samples:
+        return "评论主题"
+    base = samples[0].strip()
+    if not base:
+        return "评论主题"
+    return base[:12] + ("..." if len(base) > 12 else "")
+
+
+def _fallback_note(theme_name: str, pro_count: int, con_count: int, total: int) -> str:
+    if con_count > pro_count:
+        return f"建议补充回应「{theme_name}」的质疑点。"
+    if total >= 8:
+        return f"「{theme_name}」讨论热度高，可继续延展。"
+    return f"「{theme_name}」值得继续观察。"
+
+
+# ─── 一次性批量分析 ─────────────────────────────────────────
+
+
+def _batch_analyze_comment_themes(theme_specs: list[dict]) -> list[dict]:
+    """一次 LLM 调用完成所有评论簇的主题名、立场和注释。"""
+    if not theme_specs:
+        return []
+
+    items = []
+    for i, spec in enumerate(theme_specs, start=1):
+        sample_text = "\n".join(f"{j + 1}. {s}" for j, s in enumerate(spec["samples"]))
+        items.append(
+            f"[{i}] 评论数={len(spec['members'])}\n{sample_text}"
+        )
+
     prompt = (
-        f"以下是B站视频评论区中同一类评论的代表内容，请用一个简短的主题名概括（10字以内）：\n"
-        f"{sample_text}\n"
-        f"主题名："
+        "下面是多个B站评论簇的代表评论。\n"
+        "请一次性完成全部分析，并严格输出 JSON，不要输出额外解释。\n\n"
+        "输出格式：\n"
+        "{\n"
+        "  \"themes\": [\n"
+        "    {\"theme_name\":\"10字以内主题名\",\"stances\":[\"pro\",\"con\"],\"note\":\"20字以内分析提示\"}\n"
+        "  ]\n"
+        "}\n\n"
+        "规则：\n"
+        "1. themes 的顺序必须与输入顺序一致。\n"
+        "2. stances 的长度必须等于该评论簇展示的评论条数。\n"
+        "3. 立场只允许使用 pro 或 con；支持/赞同/提建议用 pro，反对/质疑/不认同用 con。\n"
+        "4. note 给 UP 主一句简短分析提示。\n\n"
+        f"输入：\n{chr(10).join(items)}\n"
     )
-    theme_name = chat(prompt, max_new_tokens=30)
-    theme_name = theme_name.strip().strip('"').strip("'").strip("「」")
+    raw = chat(prompt, max_new_tokens=700).strip()
+    payload = _load_json_payload(raw)
+    if not isinstance(payload, dict):
+        payload = {}
+
+    raw_themes = payload.get("themes") if isinstance(payload.get("themes"), list) else []
+    analyses = []
+    for idx, spec in enumerate(theme_specs):
+        item = raw_themes[idx] if idx < len(raw_themes) and isinstance(raw_themes[idx], dict) else {}
+        analyses.append(_normalize_theme_analysis(spec, item))
+    return analyses
+
+
+def _normalize_theme_analysis(spec: dict, item: dict) -> dict:
+    samples = spec["samples"]
+    quotes = spec["quotes"]
+
+    theme_name = _strip_markdown(str(item.get("theme_name", "")).strip())
     if not theme_name or len(theme_name) > 25:
-        theme_name = quote_texts[0][:12] + "..."
+        theme_name = _fallback_theme_name(samples)
 
-    # LLM 情感/立场分析（对 top 引用逐条判断）
-    quotes_with_stance = []
-    for q in top_quotes[:4]:
-        stance = classify_stance(q["content"], theme_name)
-        quotes_with_stance.append({
-            "t": q["content"][:100],
-            "l": q.get("like", 0),
-            "r": _reply_count(q),
-            "k": stance,
-            "why": value_reasons(q),
-        })
+    raw_stances = item.get("stances") if isinstance(item.get("stances"), list) else []
+    stances = []
+    for i, q in enumerate(quotes[:4]):
+        if i < len(raw_stances):
+            stances.append(_normalize_stance(raw_stances[i]))
+        else:
+            stances.append(_heuristic_stance(q["content"], theme_name))
 
-    # 计算争议度
-    pro_count = sum(1 for q in quotes_with_stance if q["k"] == "pro")
-    con_count = sum(1 for q in quotes_with_stance if q["k"] == "con")
+    pro_count = sum(1 for s in stances if s == "pro")
+    con_count = sum(1 for s in stances if s == "con")
     total_judged = pro_count + con_count
     dis = None
     if total_judged > 0:
@@ -205,57 +321,65 @@ def build_comment_theme(members: list[dict], total_comments: int) -> dict | None
         else:
             dis = "高"
 
-    # 占比
-    pct = round(len(members) / max(total_comments, 1) * 100) if total_comments > 0 else 0
+    note = _strip_markdown(str(item.get("note", "")).strip())
+    if not note:
+        note = _fallback_note(theme_name, pro_count, con_count, len(spec["members"]))
 
-    # 编辑注释（争议度中/高时生成）
-    note = ""
-    if dis and dis in ("中", "高"):
-        note = generate_editorial_note(theme_name, pro_count, con_count, len(members))
-    elif len(members) >= 5:
-        # 普通注释
-        note_prompt = (
-            f"评论主题「{theme_name}」共 {len(members)} 条评论，"
-            f"给UP主一句简短的分析提示（15字以内）："
-        )
-        note = chat(note_prompt, max_new_tokens=40).strip()
+    quotes_with_stance = []
+    for q, stance in zip(quotes[:4], stances):
+        quotes_with_stance.append({
+            "t": q["content"][:100],
+            "l": q.get("like", 0),
+            "r": _reply_count(q),
+            "k": stance,
+            "why": value_reasons(q),
+        })
 
-    theme = {
+    return {
         "n": theme_name,
-        "c": len(members),
-        "pct": pct,
-        "q": quotes_with_stance[:3],  # 最多展示 3 条引用
+        "c": len(spec["members"]),
+        "q": quotes_with_stance[:3],
+        "dis": dis,
+        "note": note,
     }
-    if dis:
-        theme["dis"] = dis
-    if note:
-        theme["note"] = note
 
+
+def _build_theme_from_analysis(spec: dict, analysis: dict, total_comments: int) -> dict:
+    pct = round(len(spec["members"]) / max(total_comments, 1) * 100) if total_comments > 0 else 0
+    theme = {
+        "n": analysis["n"],
+        "c": analysis["c"],
+        "pct": pct,
+        "q": analysis["q"],
+    }
+    if analysis.get("dis"):
+        theme["dis"] = analysis["dis"]
+    if analysis.get("note"):
+        theme["note"] = analysis["note"]
     return theme
 
 
-# ─── 情感分析 ───────────────────────────────────────────────
+# ─── 兼容旧调用：不再在主流程使用 ───────────────────────────
+
+
+def build_comment_theme(members: list[dict], total_comments: int) -> dict | None:
+    """兼容旧接口：单簇分析。主流程现在用 _batch_analyze_comment_themes。"""
+    sorted_members = sorted(members, key=value_score, reverse=True)
+    top_quotes = sorted_members[:5]
+    spec = {
+        "members": members,
+        "quotes": top_quotes,
+        "samples": [q["content"][:80] for q in top_quotes[:4]],
+    }
+    analysis = _batch_analyze_comment_themes([spec])[0]
+    return _build_theme_from_analysis(spec, analysis, total_comments)
+
 
 def classify_stance(text: str, theme_name: str) -> str:
-    """用 LLM 判断评论对某主题的立场。"""
-    prompt = (
-        f"判断以下B站评论对主题[{theme_name}]的态度。\n"
-        f"评论：{text[:100]}\n"
-        "如果是支持、赞同、提建议，回答'支持'。如果是反对、质疑、不认同，回答'反对'。\n"
-        "回答（支持/反对）："
-    )
-    resp = chat(prompt, max_new_tokens=10)
-    if "反对" in resp or "反" in resp:
-        return "con"
-    return "pro"
+    """兼容旧接口：优先使用轻量启发式，避免额外 LLM 请求。"""
+    return _heuristic_stance(text, theme_name)
 
 
 def generate_editorial_note(theme_name: str, pro: int, con: int, total: int) -> str:
-    """生成编辑注释。"""
-    prompt = (
-        f"评论主题「{theme_name}」共 {total} 条评论，"
-        f"其中 {pro} 条支持、{con} 条反对。"
-        f"给UP主一句简短的行动建议（20字以内）："
-    )
-    note = chat(prompt, max_new_tokens=50)
-    return note.strip()
+    """兼容旧接口：用本地兜底生成，避免额外 LLM 请求。"""
+    return _fallback_note(theme_name, pro, con, total)
