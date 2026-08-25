@@ -1,6 +1,7 @@
 """弹幕分析：峰值检测 + 主题聚类"""
 
 import json
+import math
 import re
 from collections import Counter, defaultdict
 
@@ -67,7 +68,7 @@ def analyze_danmaku(
     peaks = detect_peaks(danmakus, video_duration)
     if on_progress:
         on_progress(2, f"弹幕聚类中（{len(danmakus)} 条）...", "", 0.42)
-    dm_themes = cluster_danmaku_themes(danmakus)
+    dm_themes = cluster_danmaku_themes(danmakus, video_duration)
     if on_progress:
         on_progress(2, f"批量生成 {len(dm_themes)} 个弹幕主题和 {len(peaks)} 个高能时刻摘要...", "", 0.75)
     dm_themes, peaks = annotate_danmaku_findings(dm_themes, peaks, danmakus)
@@ -164,7 +165,7 @@ def _tokenize(text: str) -> str:
     return " ".join(words)
 
 
-def cluster_danmaku_themes(danmakus: list[dict]) -> list[dict]:
+def cluster_danmaku_themes(danmakus: list[dict], video_duration: int | float = 0) -> list[dict]:
     """使用 TF-IDF + KMeans 对弹幕进行主题聚类。"""
     print("  🏷️ 弹幕主题聚类中...")
 
@@ -199,7 +200,7 @@ def cluster_danmaku_themes(danmakus: list[dict]) -> list[dict]:
 
         content_counter = Counter(m["content"] for m in members)
         top_contents = [c for c, _ in content_counter.most_common(5)]
-        time_range = _describe_time_range(members)
+        time_range = _describe_time_range(members, video_duration)
 
         themes.append({
             "n": "",
@@ -217,32 +218,92 @@ def cluster_danmaku_themes(danmakus: list[dict]) -> list[dict]:
     return themes
 
 
-def _describe_time_range(danmakus: list[dict]) -> str:
-    """生成弹幕时间段描述。"""
+def _fmt_time(sec: float) -> str:
+    """秒数转 mm:ss / h:mm:ss。"""
+    sec = max(0, int(round(sec)))
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+
+def _fmt_time_range(start: float, end: float) -> str:
+    """格式化一个弹幕集中区间。"""
+    if end - start < 30:
+        mid = (start + end) / 2
+        return f"{_fmt_time(mid)} 附近"
+    return f"{_fmt_time(start)}-{_fmt_time(end)}"
+
+
+def _densest_cover_window(progresses: list[float], cover_count: int) -> tuple[float, float]:
+    """返回覆盖 cover_count 条弹幕的最窄时间窗。"""
+    cover_count = max(1, min(cover_count, len(progresses)))
+    best_start = progresses[0]
+    best_end = progresses[cover_count - 1]
+    best_span = best_end - best_start
+    for i in range(1, len(progresses) - cover_count + 1):
+        start = progresses[i]
+        end = progresses[i + cover_count - 1]
+        span = end - start
+        if span < best_span:
+            best_start, best_end, best_span = start, end, span
+    return best_start, best_end
+
+
+def _describe_time_range(danmakus: list[dict], video_duration: int | float = 0) -> str:
+    """生成弹幕时间段描述。
+
+    旧逻辑只看某个主题簇的最早/最晚弹幕：只要少量离群弹幕把跨度拉到
+    70% 以上，就直接显示“全片”。但主题聚类是按文本语义做的，同一主题
+    经常会散落在视频多个位置，所以这里改为优先描述“多数弹幕最密集”的
+    时间窗；对于整体分布较广的主题，仍保留最密集区间并加以说明。
+    """
     if not danmakus:
         return "零散"
 
-    progresses = [dm["progress"] for dm in danmakus]
-    p_min = min(progresses)
-    p_max = max(progresses)
-    span = p_max - p_min
+    progresses: list[float] = []
+    for dm in danmakus:
+        try:
+            progress = float(dm.get("progress", 0))
+        except (TypeError, ValueError):
+            continue
+        if progress >= 0:
+            progresses.append(progress)
 
-    total_range = p_max
-    if total_range > 0 and span / total_range > 0.7:
-        return "全片"
+    if not progresses:
+        return "零散"
 
     progresses.sort()
-    q1 = progresses[len(progresses) // 4]
-    q3 = progresses[3 * len(progresses) // 4]
+    n = len(progresses)
+    p_min = progresses[0]
+    p_max = progresses[-1]
+    duration = max(float(video_duration or 0), p_max, 1.0)
 
-    if q3 - q1 < 30:
-        mid = (q1 + q3) / 2
-        return f"{int(mid)//60:02d}:{int(mid)%60:02d} 附近"
+    if n <= 3:
+        return _fmt_time_range(p_min, p_max)
 
-    return (
-        f"{int(q1)//60:02d}:{int(q1)%60:02d}-"
-        f"{int(q3)//60:02d}:{int(q3)%60:02d}"
-    )
+    q1 = progresses[n // 4]
+    q3 = progresses[(3 * n) // 4]
+    iqr_span = q3 - q1
+
+    # 找到覆盖约半数主题弹幕的最窄窗口，比 min/max 更抗离群点。
+    cover_count = max(3, math.ceil(n * 0.45))
+    dense_start, dense_end = _densest_cover_window(progresses, cover_count)
+    dense_span = dense_end - dense_start
+
+    # 大量弹幕挤在很短区间时，直接展示该区间。
+    if dense_span <= max(60.0, duration * 0.25):
+        return _fmt_time_range(dense_start, dense_end)
+
+    # 中间 50% 仍有明显范围时，用四分位区间；这能避免早晚少数弹幕导致“全片”。
+    if iqr_span <= max(90.0, duration * 0.45):
+        return _fmt_time_range(q1, q3)
+
+    # 即便主题贯穿较长区间，表头要表达的是“集中时段”，因此仍展示最密集的
+    # 一段，并明确提示其整体分布较广，而不是给出没有定位价值的“全片”。
+    hint = _fmt_time_range(dense_start, dense_end)
+    return f"{hint}（分布较广）"
 
 
 # ─── 批量补全 ───────────────────────────────────────────────
