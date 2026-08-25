@@ -182,6 +182,8 @@ def run_pipeline(data_dir: str, cfg: dict | None = None,
         "cmThemes": cm_themes,
         "slots": slots,
         "acts": acts,
+        "wordcloud": word_clouds,
+        # 兼容旧前端/旧缓存字段名
         "wordClouds": word_clouds,
         "logs": logs,
         "meta": {
