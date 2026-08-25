@@ -5,6 +5,8 @@
 """
 
 from collections import Counter, defaultdict
+import re
+
 import jieba
 
 # 与聚类模块共用的停用词，额外补充弹幕高频语气词
@@ -22,6 +24,7 @@ _STOP_WORDS = {
 
 TOP_N = 80
 MAX_SAMPLES = 3
+RE_BRACKET_EMOTE = re.compile(r"\[[^\[\]\r\n]*\]")
 
 
 def build_wordcloud(danmakus: list[dict], comments: list[dict]) -> dict:
@@ -59,8 +62,12 @@ def _top_words(texts: list[str]) -> list[dict]:
         text = (text or "").strip()
         if not text:
             continue
+        # 先移除 B 站表情转义（如 [doge][狗头]），避免表情名进入词云统计
+        text_for_count = _strip_bracket_emotes(text)
+        if not text_for_count.strip():
+            continue
         # 同一条内的重复词只计一次，避免单条刷屏抬高权重
-        for word in set(_segment(text)):
+        for word in set(_segment(text_for_count)):
             counter[word] += 1
             if len(samples[word]) < MAX_SAMPLES:
                 samples[word].append(text[:60])
@@ -71,12 +78,19 @@ def _top_words(texts: list[str]) -> list[dict]:
     ]
 
 
+def _strip_bracket_emotes(text: str) -> str:
+    """移除中括号包裹的表情/转义内容，如 [doge][狗头]。"""
+    return RE_BRACKET_EMOTE.sub(" ", text or "")
+
+
 def _segment(text: str) -> list[str]:
     """jieba 分词并过滤停用词、单字、纯数字。"""
-    return [
-        w for w in jieba.lcut(text)
-        if len(w) > 1 and w not in _STOP_WORDS and not w.isdigit()
-    ]
+    words = []
+    for raw in jieba.lcut(text):
+        word = raw.strip()
+        if len(word) > 1 and word not in _STOP_WORDS and not word.isdigit():
+            words.append(word)
+    return words
 
 
 def generate_word_clouds_from_records(danmakus: list[dict], comments: list[dict]) -> dict:

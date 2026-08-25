@@ -47,29 +47,20 @@ def _flatten_comment_records(comments_data: dict) -> list[dict]:
 
 
 def _ensure_word_clouds(data_dir: str, report: dict) -> dict:
-    """补齐词云字段，兼容旧缓存报告。
+    """补齐并刷新词云字段，兼容旧缓存报告。
 
-    新版使用当前仓库的清晰标签词云结构：
-    {"dm": [{"w", "c", "s"}], "cm": [...]}。
+    词云统计逻辑会定期迭代，因此只要原始弹幕/评论文件存在，就
+    直接从源数据重算一份，避免旧缓存里残留已修正的表情词条。
     同时保留 wordClouds 字段，避免旧前端/旧缓存直接报错。
     """
-    if report.get("wordcloud"):
-        report.setdefault("wordClouds", report["wordcloud"])
-        return report
-    if report.get("wordClouds"):
-        # 旧版字段若已是 dm/cm 结构，直接镜像到新字段；若是
-        # danmaku/comment 结构，下面会重新从原始数据生成一份更清晰的。
-        wc = report["wordClouds"]
-        if isinstance(wc, dict) and ("dm" in wc or "cm" in wc):
-            report["wordcloud"] = wc
-            return report
-
     try:
         with open(os.path.join(data_dir, "danmaku.json"), "r", encoding="utf-8") as f:
             danmaku_data = json.load(f)
         with open(os.path.join(data_dir, "comments.json"), "r", encoding="utf-8") as f:
             comments_data = json.load(f)
     except OSError:
+        if report.get("wordcloud"):
+            report.setdefault("wordClouds", report["wordcloud"])
         return report
 
     danmakus = []
@@ -79,8 +70,17 @@ def _ensure_word_clouds(data_dir: str, report: dict) -> dict:
 
     try:
         wc = generate_word_clouds_from_records(danmakus, comments)
+        changed = report.get("wordcloud") != wc or report.get("wordClouds") != wc
         report["wordcloud"] = wc
         report["wordClouds"] = wc
+
+        if changed:
+            report_path = os.path.join(data_dir, "report.json")
+            try:
+                with open(report_path, "w", encoding="utf-8") as f:
+                    json.dump(report, f, ensure_ascii=False, indent=2)
+            except OSError as e:
+                print(f"⚠ 词云缓存刷新失败: {e}")
     except Exception as e:
         print(f"⚠ 词云生成失败: {e}")
     return report
