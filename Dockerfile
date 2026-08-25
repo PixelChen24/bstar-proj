@@ -17,7 +17,7 @@ COPY analysis/ analysis/
 COPY fetch_video.py .
 COPY analyze_video.py .
 COPY server.py .
-COPY danmaku-comment-insight-demo.html .
+COPY frontend/ frontend/
 
 RUN mkdir -p /app/output /app/config
 
@@ -26,4 +26,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
-CMD ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
