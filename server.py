@@ -12,9 +12,11 @@ import json
 import os
 import time
 import traceback
+from pathlib import Path
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 import uvicorn
 
@@ -26,9 +28,11 @@ from analysis.llm import init_backend, test_connection
 from analysis import rate_limit
 from analysis.wordcloud import generate_word_clouds_from_records
 
+BASE_DIR = Path(__file__).resolve().parent
 app = FastAPI(title="弹幕评论区智能分析")
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "frontend")), name="static")
 
-OUTPUT_DIR = "./output"
+OUTPUT_DIR = str(BASE_DIR / "output")
 MAX_COMMENTS = 50  # demo 阶段限制评论数，加快速度
 
 
@@ -84,7 +88,7 @@ def _ensure_word_clouds(data_dir: str, report: dict) -> dict:
 @app.get("/")
 async def index():
     """Serve 前端页面"""
-    return FileResponse("danmaku-comment-insight-demo.html")
+    return FileResponse(str(BASE_DIR / "frontend" / "index.html"))
 
 
 @app.get("/api/report/{bvid}")

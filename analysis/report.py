@@ -6,6 +6,8 @@ import re
 from .llm import chat
 
 
+
+
 def _strip_markdown(text: str) -> str:
     """去除 markdown 格式标记（**bold** → bold 等）。"""
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
@@ -39,6 +41,108 @@ def _load_json_payload(text: str):
     return None
 
 
+def _ref(kind: str, idx: int, label: str) -> dict:
+    return {"k": kind, "i": idx, "label": label}
+
+
+def _pick_evidence(
+    dm_themes: list[dict],
+    peaks: list[dict],
+    cm_themes: list[dict],
+) -> list[dict]:
+    """为 5 个固定槽位各挑出依据项和统计事实。
+
+    这里不生成独立的提问分类；锚点只指向已有的弹幕主题、高能时刻、评论主题。
+    """
+    ev = []
+
+    # 1. 观众最喜欢什么 —— 最高频弹幕主题 + 最高密度峰值
+    facts, refs = [], []
+    if dm_themes:
+        t = dm_themes[0]
+        facts.append(f"弹幕最集中在「{t.get('n', '')}」，共 {t.get('c', 0)} 条（{t.get('t', '')}）")
+        refs.append(_ref("dm", 0, t.get("n", "弹幕主题")))
+    if peaks:
+        p = peaks[0]
+        pg = f"（{p['pg']}）" if p.get("pg") else ""
+        facts.append(f"弹幕密度最高点在 {p.get('tm', '')}{pg}，达平均值的 {p.get('x', '')}")
+        refs.append(_ref("pk", 0, f"{p.get('tm', '')} {p.get('x', '')}".strip()))
+    ev.append({"h": "观众最喜欢什么", "facts": facts, "refs": refs})
+
+    # 2. 最不满意什么 —— 负面/争议表述占比最高的评论主题
+    facts, refs = [], []
+    neg = [(i, t) for i, t in enumerate(cm_themes or []) if t.get("dis") in ("中", "高")]
+    if neg:
+        i, t = max(neg, key=lambda x: x[1].get("c", 0))
+        con_n = t.get("conN", sum(1 for q in t.get("q", []) if q.get("k") == "con"))
+        judged = t.get("judged", len(t.get("q", [])))
+        facts.append(
+            f"评论主题「{t.get('n', '')}」共 {t.get('c', 0)} 条，其中 {con_n}/{judged} 条含负面表述，争议度 {t.get('dis', '')}"
+        )
+        refs.append(_ref("cm", i, t.get("n", "评论主题")))
+    elif cm_themes:
+        t = cm_themes[0]
+        facts.append(f"最大评论主题是「{t.get('n', '')}」，共 {t.get('c', 0)} 条")
+        refs.append(_ref("cm", 0, t.get("n", "评论主题")))
+    else:
+        facts.append("评论数量不足，未能定位评论主题")
+    ev.append({"h": "最不满意什么", "facts": facts, "refs": refs})
+
+    # 3. 最常问什么 —— 不生成独立提问分类，锚点退回评论主题
+    facts, refs = [], []
+    if cm_themes:
+        t = cm_themes[0]
+        facts.append(f"未单独生成提问分类；可先查看最大评论主题「{t.get('n', '')}」中的代表评论")
+        refs.append(_ref("cm", 0, t.get("n", "评论主题")))
+    else:
+        facts.append("未单独生成提问分类，且评论主题不足")
+    ev.append({"h": "最常问什么", "facts": facts, "refs": refs})
+
+    # 4. 有哪些争议 —— 争议度高的主题，没有则退到中等
+    facts, refs = [], []
+    hi = [(i, t) for i, t in enumerate(cm_themes or []) if t.get("dis") == "高"]
+    mid = [(i, t) for i, t in enumerate(cm_themes or []) if t.get("dis") == "中"]
+    picked = hi[:3] or mid[:3]
+    if picked:
+        level = "高" if hi else "中等"
+        for i, t in picked:
+            facts.append(f"「{t.get('n', '')}」{t.get('c', 0)} 条，争议度{t.get('dis', level)}")
+            refs.append(_ref("cm", i, t.get("n", "评论主题")))
+    else:
+        facts.append("各主题均未达到中等争议度")
+    ev.append({"h": "有哪些争议", "facts": facts, "refs": refs})
+
+    # 5. 下期值得关注 —— 体量大但尚未展开的评论主题，其次弹幕主题
+    facts, refs = [], []
+    for i, t in list(enumerate(cm_themes or []))[1:3]:
+        facts.append(f"「{t.get('n', '')}」{t.get('c', 0)} 条评论（占最大主题的 {t.get('pct', 0)}%）")
+        refs.append(_ref("cm", i, t.get("n", "评论主题")))
+    if not facts and dm_themes:
+        for i, t in list(enumerate(dm_themes))[1:3]:
+            facts.append(f"弹幕主题「{t.get('n', '')}」{t.get('c', 0)} 条")
+            refs.append(_ref("dm", i, t.get("n", "弹幕主题")))
+    if not facts:
+        facts.append("主题数量不足，无法给出选题线索")
+    ev.append({"h": "下期值得关注", "facts": facts, "refs": refs})
+
+    return ev
+
+def _attach_refs(slots: list[dict], evidence: list[dict]) -> list[dict]:
+    by_h = {ev.get("h"): ev for ev in evidence}
+    out = []
+    for slot in slots or []:
+        item = dict(slot)
+        ev = by_h.get(item.get("h"))
+        refs = (ev or {}).get("refs", [])
+        item["refs"] = refs
+        if refs:
+            item["r"] = _ref_label(refs)
+        else:
+            item.setdefault("r", "无匹配项")
+        out.append(item)
+    return out
+
+
 def generate_report(
     dm_themes: list[dict],
     peaks: list[dict],
@@ -55,11 +159,16 @@ def generate_report(
     if on_progress:
         on_progress(4, "正在汇总复盘报告...", "", 0.1)
 
+    # 证据选取与模式无关：从已有弹幕主题 / 高能时刻 / 评论主题里挑出依据。
+    # 不额外生成“提问分类”，因此 refs 只会指向 dm / pk / cm。
+    evidence = _pick_evidence(dm_themes, peaks, cm_themes)
+
     # 构建分析上下文摘要
     context = _build_context(dm_themes, peaks, cm_themes, video_info)
 
     # 合并生成 5 个固定问题 + Top5 建议，原来这里是 6 次 LLM 调用。
     slots, acts = generate_report_bundle(context, dm_themes, cm_themes)
+    slots = _attach_refs(slots, evidence)
     if on_progress:
         on_progress(4, f"复盘报告完成：{len(slots)} 条结论 / {len(acts)} 条建议", "", 1.0)
     return slots, acts
@@ -207,6 +316,13 @@ def _normalize_slots(raw_slots, dm_themes: list[dict], cm_themes: list[dict]) ->
         })
     return slots
 
+
+
+
+def _ref_label(refs: list[dict]) -> str:
+    if not refs:
+        return "无匹配项"
+    return f"溯源 {len(refs)} 项：" + "、".join(r.get("label", "") for r in refs if r.get("label"))
 
 def _normalize_acts(raw_acts) -> list[dict]:
     if not isinstance(raw_acts, list):
