@@ -126,7 +126,7 @@ def run_pipeline(data_dir: str, cfg: dict | None = None,
 
     # 2. 初始化 LLM 后端
     backend_label = init_backend(cfg)
-    _progress(1, f"LLM 后端就绪：{backend_label}", "", 0.08)
+    _progress(1, f"AI就绪", "", 0.08)
 
     # 3. 清洗
     t0 = time.time()

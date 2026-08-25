@@ -28,10 +28,10 @@ function render(D){
   const hiDisCount = D.cmThemes ? D.cmThemes.filter(t=>t.dis==='高').length : 0;
 
   const cards=[
-    {k:'dm', i:'✦', t:'弹幕反馈', b:dmCount+' 个主题', p:D.dmThemes&&D.dmThemes[0]?`点开看「${D.dmThemes[0].n}」的交互分布图`:'-'},
-    {k:'pk', i:'↯', t:'高能时刻', b:'TOP '+pkCount+' 片段', p:topPeak},
-    {k:'cm', i:'◐', t:'评论总结', b:cmCount+' 个主题', p:hiDisCount?`含 ${hiDisCount} 个高争议主题`:`${cmCount} 个主题已归纳`},
-    {k:'rp', i:'▣', t:'复盘报告', b:(D.slots?D.slots.length:0)+' 条结论', p:`Top${actCount} 可执行建议已生成`}];
+    {k:'dm', i:'💬', t:'弹幕反馈', b:dmCount+' 个主题', p:D.dmThemes&&D.dmThemes[0]?`点开看「${D.dmThemes[0].n}」的交互分布图`:'-'},
+    {k:'pk', i:'🔥', t:'高能时刻', b:'TOP '+pkCount+' 片段', p:topPeak},
+    {k:'cm', i:'🧵', t:'评论总结', b:cmCount+' 个主题', p:hiDisCount?`含 ${hiDisCount} 个高争议主题`:`${cmCount} 个主题已归纳`},
+    {k:'rp', i:'🧠', t:'复盘报告', b:(D.slots?D.slots.length:0)+' 条结论', p:`Top${actCount} 可执行建议已生成`}];
   $('#cards').innerHTML = cards.map(c=>`
     <button type="button" class="card" data-k="${c.k}" role="tab" aria-pressed="false" aria-label="查看${c.t}">
       <h3><span class="ico">${c.i}</span>${c.t}</h3>
@@ -60,11 +60,11 @@ function render(D){
       detailEl?.classList.remove('hide');
       state?.classList.add('is-active');
       insightPanel?.classList.add('is-active');
-      if(state) state.innerHTML = '<span class="state-dot"></span><span>正在查看 ' + ({dm:'弹幕反馈',pk:'高能时刻',cm:'评论总结',rp:'复盘报告'}[active] || '视角') + ' · 点击收起</span>';
+      if(state) state.innerHTML = '<span class="state-dot"></span><span>正在查看 ' + ({dm:'💬 弹幕反馈',pk:'🔥 高能时刻',cm:'🧵 评论总结',rp:'🧠 复盘报告'}[active] || '✨ 视角') + ' · 点击收起</span>';
     }else{
       empty?.classList.remove('is-hidden');
       detailEl?.classList.add('hide');
-      if(state){ state.classList.remove('is-active'); state.innerHTML = '<span class="state-dot"></span><span>未选择视角</span>'; }
+      if(state){ state.classList.remove('is-active'); state.innerHTML = '<span class="state-dot"></span><span>待探索 ✨</span>'; }
       insightPanel?.classList.remove('is-active');
     }
   };
@@ -127,7 +127,7 @@ function render(D){
 
   $('#slots').innerHTML = (D.slots||[]).map((s, idx)=>{
     const refs = (s.refs||[]).map(r=>
-      `<span class="reflink" role="button" tabindex="0" data-rk="${escapeHtml(r.k)}" data-ri="${Number(r.i)||0}">▸ ${escapeHtml(r.label)}</span>`
+      `<span class="reflink" role="button" tabindex="0" data-rk="${escapeHtml(r.k)}" data-ri="${Number(r.i)||0}">🔗 ${escapeHtml(r.label)}</span>`
     ).join('');
     return `<div class="slot" data-idx="${idx}"><h4>${escapeHtml(s.h)}</h4><p>${escapeHtml(s.p)}</p>`
       + (refs ? `<div class="refs">${refs}</div>`

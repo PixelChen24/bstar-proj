@@ -7,38 +7,57 @@
 <meta name="description" content="输入 B 站 BV 号，实时生成弹幕与评论区的观众洞察、争议主题和可执行复盘建议。">
 <link rel="stylesheet" href="/static/styles/base.css">
 <link rel="stylesheet" href="/static/styles/drill.css">
+<link rel="stylesheet" href="/static/styles/premium.css">
 </head>
 <body>
+<div class="cursor-aura" aria-hidden="true"></div>
+<div class="site-ambient" aria-hidden="true"><span>💫</span><span>🧠</span><span>📊</span><span>💬</span><span>✨</span></div>
 <a class="skip-link" href="#main">跳到主要内容</a>
 <main class="wrap" id="main">
 
-  <section class="banner" aria-labelledby="page-title">
+  <section class="banner revealable" aria-labelledby="page-title">
+    <div class="hero-noise" aria-hidden="true"></div>
+    <div class="emoji-rain" aria-hidden="true">💬 ✨ 😂 🔥 🧠 🧊 📈 🌈</div>
     <div class="banner-copy">
-      <div class="eyebrow">Bilibili Audience Intelligence</div>
-      <h1 id="page-title">弹幕评论区智能分析</h1>
-      <p>输入一个 BV 号，把弹幕峰值、评论立场、争议主题和改进建议整理成一份清晰可导出的观众复盘报告。</p>
+      <div class="eyebrow">✨ Bilibili Audience Intelligence</div>
+      <h1 id="page-title"><span>把弹幕评论区</span><span>炼成创作决策仪表盘</span></h1>
+      <p>粘贴一个 BV 号或稿件链接，自动捕捉弹幕峰值、评论立场、争议主题与复盘建议——像打开一间会发光的观众研究室。🚀</p>
+      <div class="hero-metrics" aria-label="产品能力亮点">
+        <span><b>5</b> 阶段分析 ⚡</span>
+        <span><b>2</b> 路舆情信号 💬</span>
+        <span><b>Top</b> 行动建议 🪄</span>
+      </div>
     </div>
     <div class="hero-orbit" aria-hidden="true">
-      <div class="orbit-card"><span>弹幕主题聚类</span><b>🥚</b></div>
-      <div class="orbit-card"><span>高能时间切片</span><b>🔥</b></div>
-      <div class="orbit-card"><span>评论立场归纳</span><b>💬</b></div>
+      <div class="orbit-core"><span>AI</span><b>🧠</b></div>
+      <div class="orbit-card"><span>弹幕主题聚类</span><b>🥚</b><em>抓住大家反复刷屏的梗</em></div>
+      <div class="orbit-card"><span>高能时间切片</span><b>🔥</b><em>定位爆点与情绪转折</em></div>
+      <div class="orbit-card"><span>评论立场归纳</span><b>💬</b><em>快速看懂赞同 / 质疑</em></div>
     </div>
   </section>
 
-  <section class="panel" id="entry" aria-label="输入 BV 号">
+  <section class="panel entry-panel revealable" id="entry" aria-label="输入 BV 号">
+    <div class="entry-topline">
+      <span>🎬 选择一个视频，开始观众情绪探测</span>
+      <span>无需手动整理弹幕 / 评论 🧹</span>
+    </div>
     <div class="entry">
-      <input id="bv" aria-label="BV 号或稿件链接" placeholder="输入 BV 号或稿件链接，如 BV1xx411c7mD" value="BV1xx411c7mD">
-      <button class="btn" id="go">生成复盘报告</button>
+      <div class="input-shell">
+        <span class="input-emoji" aria-hidden="true">🔎</span>
+        <input id="bv" aria-label="BV 号或稿件链接" placeholder="粘贴 BV 号或稿件链接，如 BV1xx411c7mD" value="BV1xx411c7mD">
+      </div>
+      <button class="btn" id="go"><span>✨ 生成高级复盘</span><i aria-hidden="true">↗</i></button>
     </div>
     <div class="samples">
       <span class="tiny">样例视频：</span>
-      <button class="chip" type="button" data-s="0">肖恩看</button>
-      <button class="chip" type="button" data-s="1">好叫好伐</button>
-      <button class="chip" type="button" data-s="2">笔吧评测室</button>
+      <button class="chip" type="button" data-s="0">🍿 肖恩看</button>
+      <button class="chip" type="button" data-s="1">😆 好叫好伐</button>
+      <button class="chip" type="button" data-s="2">💻 笔吧评测室</button>
+      <span class="entry-tip">支持直接粘贴链接 · 自动提取 BV ✂️</span>
     </div>
   </section>
 
-  <section class="panel hide" id="prog" aria-live="polite">
+  <section class="panel hide revealable" id="prog" aria-live="polite">
     <h2>正在生成观众复盘</h2>
     <div class="progress-hero">
       <div class="progress-copy">
@@ -62,16 +81,16 @@
       <div class="cute-line" id="cute-line">小助手正在戴上耳机听大家聊天 ✨</div>
     </div>
     <div class="stages">
-      <div class="stage" data-k="0"><div class="dot">1</div>数据接入</div>
-      <div class="stage" data-k="1"><div class="dot">2</div>清洗去重</div>
-      <div class="stage" data-k="2"><div class="dot">3</div>聚类分析</div>
-      <div class="stage" data-k="3"><div class="dot">4</div>智能归纳</div>
-      <div class="stage" data-k="4"><div class="dot">5</div>生成报告</div>
+      <div class="stage" data-k="0"><div class="dot">📡</div>数据接入</div>
+      <div class="stage" data-k="1"><div class="dot">🧼</div>清洗去重</div>
+      <div class="stage" data-k="2"><div class="dot">🧩</div>聚类分析</div>
+      <div class="stage" data-k="3"><div class="dot">🧠</div>智能归纳</div>
+      <div class="stage" data-k="4"><div class="dot">📄</div>生成报告</div>
     </div>
   </section>
 
   <section id="result" class="hide">
-    <div class="panel">
+    <div class="panel revealable video-panel">
       <div class="vhead">
         <div class="cover" id="vcover">封面</div>
         <div>
@@ -87,14 +106,14 @@
       </div>
     </div>
 
-    <div class="panel wordcloud-panel">
+    <div class="panel wordcloud-panel revealable">
       <div class="section-head">
         <div>
-          <div class="eyebrow">AUDIENCE SIGNALS</div>
-          <h2>弹幕 / 评论词云</h2>
+          <div class="eyebrow">☁️ AUDIENCE SIGNALS</div>
+          <h2>弹幕 / 评论词云 ✨</h2>
           <p class="section-note">先看观众反复提到什么，再进入下方的主题细节。</p>
         </div>
-        <span class="section-badge">高频词 · 视觉化</span>
+        <span class="section-badge">高频词 · 视觉化 🌈</span>
       </div>
       <div class="wordcloud-wrap">
         <div class="cloud-card">
@@ -112,11 +131,11 @@
       </div>
     </div>
 
-    <div class="panel insight-panel">
+    <div class="panel insight-panel revealable">
       <div class="insight-head">
         <div>
-          <div class="eyebrow">EXPLORE THE REPORT</div>
-          <h2>洞察导航</h2>
+          <div class="eyebrow">🧭 EXPLORE THE REPORT</div>
+          <h2>洞察导航 🪐</h2>
           <p class="section-note">选择一个视角，展开对应的证据与细节。</p>
         </div>
         <div class="insight-state" id="insight-state" aria-live="polite">
@@ -124,18 +143,19 @@
         </div>
       </div>
       <div class="insight-deck" id="cards" role="tablist" aria-label="洞察分类"></div>
+      <div class="insight-empty" id="insight-empty"><span>👆</span><b>点选上方卡片展开证据链</b><small>支持再次点击收起，结论可跳转溯源 ✨</small></div>
     </div>
 
-    <div class="panel insight-detail hide" id="drill" aria-live="polite"></div>
+    <div class="panel insight-detail hide revealable" id="drill" aria-live="polite"></div>
 
-    <div class="panel">
-      <h2>一页复盘结论</h2>
+    <div class="panel revealable conclusion-panel">
+      <h2>一页复盘结论 🧾</h2>
       <div class="slots" id="slots"></div>
-      <h2 class="section-gap">Top 5 可执行改进建议</h2>
+      <h2 class="section-gap">Top 5 可执行改进建议 🛠️</h2>
       <div class="acts" id="acts"></div>
       <div class="samples report-actions">
-        <button class="btn ghost" id="export-md">导出 Markdown</button>
-        <button class="btn ghost" id="again">重新演示</button>
+        <button class="btn ghost" id="export-md">📦 导出 Markdown</button>
+        <button class="btn ghost" id="again">🔁 重新演示</button>
       </div>
     </div>
   </section>
@@ -151,5 +171,6 @@
 <script src="/static/scripts/dmDrill.js"></script>
 <script src="/static/scripts/drill.js"></script>
 <script src="/static/scripts/app.js"></script>
+<script src="/static/scripts/premium.js"></script>
 </body>
 </html>
