@@ -12,6 +12,11 @@
 <body>
 <div class="cursor-aura" aria-hidden="true"></div>
 <div class="site-ambient" aria-hidden="true"><span>💫</span><span>🧠</span><span>📊</span><span>💬</span><span>✨</span></div>
+<section class="hot-danmaku-layer hide" id="hot-danmaku-layer" aria-hidden="true">
+  <div class="hot-danmaku-stage-wrap">
+    <div class="hot-danmaku-stage" id="hot-danmaku-stage"></div>
+  </div>
+</section>
 <a class="skip-link" href="#main">跳到主要内容</a>
 <main class="wrap" id="main">
 
@@ -20,10 +25,10 @@
     <div class="emoji-rain" aria-hidden="true">💬 ✨ 😂 🔥 🧠 🧊 📈 🌈</div>
     <div class="banner-copy">
       <div class="eyebrow">✨ Bilibili Audience Intelligence</div>
-      <h1 id="page-title"><span>把弹幕评论区</span><span>炼成创作决策仪表盘</span></h1>
-      <p>粘贴一个 BV 号或稿件链接，自动捕捉弹幕峰值、评论立场、争议主题与复盘建议——像打开一间会发光的观众研究室。🚀</p>
+      <h1 id="page-title"><span>弹评炼丹炉</span></h1>
+      <p>粘贴一个 BV 号或稿件链接，炼丹炉⚗️自动捕捉弹幕峰值、评论立场，🧙‍♂️把弹幕评论区炼成创作决策仪表盘。🚀</p>
       <div class="hero-metrics" aria-label="产品能力亮点">
-        <span><b>5</b> 阶段分析 ⚡</span>
+        <span><b>多</b> 阶段分析 ⚡</span>
         <span><b>2</b> 路舆情信号 💬</span>
         <span><b>Top</b> 行动建议 🪄</span>
       </div>
@@ -39,12 +44,11 @@
   <section class="panel entry-panel revealable" id="entry" aria-label="输入 BV 号">
     <div class="entry-topline">
       <span>🎬 选择一个视频，开始观众情绪探测</span>
-      <span>无需手动整理弹幕 / 评论 🧹</span>
     </div>
     <div class="entry">
       <div class="input-shell">
         <span class="input-emoji" aria-hidden="true">🔎</span>
-        <input id="bv" aria-label="BV 号或稿件链接" placeholder="粘贴 BV 号或稿件链接，如 BV1xx411c7mD" value="BV1xx411c7mD">
+        <input id="bv" aria-label="BV 号或稿件链接" placeholder="粘贴 BV 号或稿件链接，如 BV1Ke3C6FEuc" value="粘贴 BV 号或稿件链接，如 BV1Ke3C6FEuc">
       </div>
       <button class="btn" id="go"><span>✨ 生成高级复盘</span><i aria-hidden="true">↗</i></button>
     </div>
@@ -57,18 +61,24 @@
     </div>
   </section>
 
-  <section class="panel hide revealable" id="prog" aria-live="polite">
-    <h2>正在生成观众复盘</h2>
-    <div class="progress-hero">
-      <div class="progress-copy">
+  <section class="panel hide revealable loading-panel" id="prog" aria-live="polite">
+    <div class="loading-head">
+      <div class="loading-title-block">
+
+        <h2>正在生成观众复盘</h2>
+        <p class="loading-kicker">高能弹幕、评论情绪、争议主题，正在同步装配中 🎬</p>
+      </div>
+      <div class="loading-meter">
+        <div class="progress-num" id="progress-num">0%</div>
         <div class="status-window" aria-label="当前分析状态">
           <div class="status-strip" id="status-strip">
             <span>准备接入弹幕宇宙…</span>
           </div>
         </div>
-        <div class="progress-num" id="progress-num">0%</div>
       </div>
+    </div>
 
+    <div class="progress-hero">
       <div class="progress-track" aria-hidden="true">
         <div class="progress-fill" id="progress-fill">
           <span class="progress-glow"></span>
@@ -77,15 +87,21 @@
         <span class="bubble b2">💬</span>
         <span class="bubble b3">🫧</span>
       </div>
-
+      <div class="loading-microgrid" aria-hidden="true">
+        <span>📡 实时接入</span>
+        <span>🧼 清洗去重</span>
+        <span>🧩 聚类归并</span>
+        <span>🧠 智能归纳</span>
+      </div>
       <div class="cute-line" id="cute-line">小助手正在戴上耳机听大家聊天 ✨</div>
     </div>
+
     <div class="stages">
-      <div class="stage" data-k="0"><div class="dot">📡</div>数据接入</div>
-      <div class="stage" data-k="1"><div class="dot">🧼</div>清洗去重</div>
-      <div class="stage" data-k="2"><div class="dot">🧩</div>聚类分析</div>
-      <div class="stage" data-k="3"><div class="dot">🧠</div>智能归纳</div>
-      <div class="stage" data-k="4"><div class="dot">📄</div>生成报告</div>
+      <div class="stage" data-k="0"><div class="dot">01</div><div class="stage-copy"><strong>数据接入</strong><span>抓取视频、弹幕与评论</span></div></div>
+      <div class="stage" data-k="1"><div class="dot">02</div><div class="stage-copy"><strong>清洗去重</strong><span>过滤噪音与重复信息</span></div></div>
+      <div class="stage" data-k="2"><div class="dot">03</div><div class="stage-copy"><strong>聚类分析</strong><span>寻找相似观点与主题簇</span></div></div>
+      <div class="stage" data-k="3"><div class="dot">04</div><div class="stage-copy"><strong>智能归纳</strong><span>提炼争议点与高能节点</span></div></div>
+      <div class="stage" data-k="4"><div class="dot">05</div><div class="stage-copy"><strong>生成报告</strong><span>组合成创作者可执行结论</span></div></div>
     </div>
   </section>
 
@@ -111,25 +127,26 @@
         <div>
           <div class="eyebrow">☁️ AUDIENCE SIGNALS</div>
           <h2>弹幕 / 评论词云 ✨</h2>
-          <p class="section-note">先看观众反复提到什么，再进入下方的主题细节。</p>
+          <!-- <p class="section-note">先看观众反复提到什么，再进入下方的主题细节。</p> -->
         </div>
-        <span class="section-badge">高频词 · 视觉化 🌈</span>
+        <!-- <span class="section-badge">高频词 · 视觉化 🌈</span> -->
       </div>
       <div class="wordcloud-wrap">
         <div class="cloud-card">
           <h3><span>弹幕词云</span><span class="sub" id="dm-wordcloud-sub">高频弹幕词</span></h3>
           <div class="cloud-stage" id="dm-wordcloud"></div>
           <div class="wc-detail" id="dm-wordcloud-detail"></div>
-          <div class="cloud-legend"><span class="cloud-chip">更大 = 更高频</span><span class="cloud-chip">粉橙 = 即时互动</span></div>
+          <!-- <div class="cloud-legend"><span class="cloud-chip">更大 = 更高频</span><span class="cloud-chip">粉橙 = 即时互动</span></div> -->
         </div>
         <div class="cloud-card">
           <h3><span>评论词云</span><span class="sub" id="cm-wordcloud-sub">高频评论词</span></h3>
           <div class="cloud-stage" id="cm-wordcloud"></div>
           <div class="wc-detail" id="cm-wordcloud-detail"></div>
-          <div class="cloud-legend"><span class="cloud-chip">更大 = 更高频</span><span class="cloud-chip">青蓝 = 讨论聚焦</span></div>
+          <!-- <div class="cloud-legend"><span class="cloud-chip">更大 = 更高频</span><span class="cloud-chip">青蓝 = 讨论聚焦</span></div> -->
         </div>
       </div>
     </div>
+
 
     <div class="panel insight-panel revealable">
       <div class="insight-head">
@@ -149,7 +166,7 @@
     <div class="panel insight-detail hide revealable" id="drill" aria-live="polite"></div>
 
     <div class="panel revealable conclusion-panel">
-      <h2>一页复盘结论 🧾</h2>
+      <h2>创作者复盘结论 🧾</h2>
       <div class="slots" id="slots"></div>
       <h2 class="section-gap">Top 5 可执行改进建议 🛠️</h2>
       <div class="acts" id="acts"></div>
@@ -165,6 +182,7 @@
 <script src="/static/scripts/utils.js"></script>
 <script src="/static/scripts/progress.js"></script>
 <script src="/static/scripts/wordcloud.js"></script>
+<script src="/static/scripts/hotDanmaku.js"></script>
 <script src="/static/scripts/exportMarkdown.js"></script>
 <script src="/static/scripts/api.js"></script>
 <script src="/static/scripts/render.js"></script>

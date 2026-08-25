@@ -174,7 +174,6 @@ function renderDmDrill(themes, peaks, duration){
             <h3>主题聚焦</h3>
             <p>当前高频主题与峰值摘要。</p>
           </div>
-          <div class="tiny">可随时切换</div>
         </div>
 
         <div class="dm-summary-grid">

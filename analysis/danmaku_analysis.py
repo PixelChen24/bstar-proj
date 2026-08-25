@@ -378,8 +378,6 @@ def annotate_danmaku_findings(
         if not narrative:
             narrative = "弹幕密度较高，观众反应集中。"
         peak["s"] = narrative
-        peak.pop("t_start", None)
-        peak.pop("t_end", None)
 
     return themes, peaks
 
@@ -391,3 +389,112 @@ def generate_peak_narratives(peaks: list[dict], danmakus: list[dict]) -> list[di
     """兼容旧接口：单独补全峰值叙事。"""
     _, peaks = annotate_danmaku_findings([], peaks, danmakus)
     return peaks
+
+
+def _parse_hms_to_seconds(tm: str) -> float:
+    parts = [p for p in str(tm or '').split(':') if p != '']
+    if not parts:
+        return 0.0
+    try:
+        values = [float(p) for p in parts]
+    except ValueError:
+        return 0.0
+    if len(values) == 3:
+        return values[0] * 3600 + values[1] * 60 + values[2]
+    if len(values) == 2:
+        return values[0] * 60 + values[1]
+    return values[0]
+
+
+def _peak_window_bounds(peak: dict, video_duration: int | float = 0) -> tuple[float, float]:
+    """为单个高能时刻推导弹幕飞屏窗口。"""
+    start = peak.get("t_start")
+    end = peak.get("t_end")
+    if start is not None and end is not None:
+        try:
+            return max(0.0, float(start)), max(float(start) + 1.0, float(end))
+        except (TypeError, ValueError):
+            pass
+
+    center = _parse_hms_to_seconds(peak.get("tm", ""))
+    try:
+        multiplier = float(str(peak.get("x", "1x")).rstrip("x"))
+    except ValueError:
+        multiplier = 1.0
+
+    span = max(18.0, min(54.0, 12.0 + multiplier * 4.0))
+    half = span / 2
+    start = max(0.0, center - half)
+    end = center + half
+    if video_duration:
+        end = min(float(video_duration), end)
+    return start, max(start + 1.0, end)
+
+
+def build_peak_danmaku_showcase(
+    danmakus: list[dict],
+    peaks: list[dict],
+    video_duration: int | float = 0,
+    max_items_per_peak: int = 18,
+) -> list[dict]:
+    """提取高能时刻里的真实弹幕，用于前端弹幕飞屏展示。"""
+    if not danmakus or not peaks:
+        return []
+
+    showcase: list[dict] = []
+    for peak in peaks[:3]:
+        start, end = _peak_window_bounds(peak, video_duration)
+        window_dms = [
+            dm for dm in danmakus
+            if start <= float(dm.get("progress", 0)) < end and str(dm.get("content", "")).strip()
+        ]
+        if not window_dms:
+            continue
+
+        center = (start + end) / 2
+        content_counter = Counter(
+            str(dm.get("content", "")).strip().replace("\u3000", " ")
+            for dm in window_dms
+            if str(dm.get("content", "")).strip()
+        )
+
+        ranked = sorted(
+            window_dms,
+            key=lambda dm: (
+                -content_counter[str(dm.get("content", "")).strip().replace("\u3000", " ")],
+                abs(float(dm.get("progress", 0)) - center),
+                float(dm.get("progress", 0)),
+            ),
+        )
+
+        items: list[str] = []
+        seen = set()
+        for dm in ranked:
+            text = str(dm.get("content", "")).strip().replace("\u3000", " ")
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            items.append(text)
+            if len(items) >= max_items_per_peak:
+                break
+
+        if len(items) < min(6, max_items_per_peak):
+            for dm in ranked:
+                text = str(dm.get("content", "")).strip().replace("\u3000", " ")
+                if not text:
+                    continue
+                items.append(text)
+                if len(items) >= max_items_per_peak:
+                    break
+
+        showcase.append({
+            "tm": peak.get("tm", ""),
+            "x": peak.get("x", ""),
+            "n": peak.get("n", 0),
+            "s": peak.get("s", ""),
+            "start": round(start, 2),
+            "end": round(end, 2),
+            "items": items[:max_items_per_peak],
+        })
+
+    return showcase

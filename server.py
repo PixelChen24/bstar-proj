@@ -26,6 +26,7 @@ from bilibili.comment import fetch_comments
 from analyze_video import run_pipeline, save_json
 from analysis.llm import init_backend, test_connection
 from analysis import rate_limit
+from analysis.danmaku_analysis import build_peak_danmaku_showcase
 from analysis.wordcloud import generate_word_clouds_from_records
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -85,6 +86,32 @@ def _ensure_word_clouds(data_dir: str, report: dict) -> dict:
     return report
 
 
+def _ensure_hot_danmaku(data_dir: str, report: dict) -> dict:
+    """补齐高能弹幕飞屏字段，兼容旧缓存报告。"""
+    if report.get("hotDanmaku"):
+        return report
+    peaks = report.get("peaks") or []
+    if not peaks:
+        return report
+
+    try:
+        with open(os.path.join(data_dir, "danmaku.json"), "r", encoding="utf-8") as f:
+            danmaku_data = json.load(f)
+    except OSError:
+        return report
+
+    danmakus = []
+    for seg in danmaku_data.get("segments", []):
+        danmakus.extend(seg.get("danmakus", []))
+
+    try:
+        duration = (report.get("video") or {}).get("duration", 0)
+        report["hotDanmaku"] = build_peak_danmaku_showcase(danmakus, peaks, duration)
+    except Exception as e:
+        print(f"⚠ 高能弹幕飞屏数据生成失败: {e}")
+    return report
+
+
 @app.get("/")
 async def index():
     """Serve 前端页面"""
@@ -99,6 +126,7 @@ async def get_report(bvid: str):
         with open(report_path, "r", encoding="utf-8") as f:
             report = json.load(f)
         report = _ensure_word_clouds(os.path.join(OUTPUT_DIR, bvid), report)
+        report = _ensure_hot_danmaku(os.path.join(OUTPUT_DIR, bvid), report)
         return JSONResponse(report)
     return JSONResponse({"error": "报告不存在，请先分析"}, status_code=404)
 
@@ -147,6 +175,7 @@ async def analyze_stream(
                 with open(report_path, "r", encoding="utf-8") as f:
                     report = json.load(f)
                 report = _ensure_word_clouds(data_dir, report)
+                report = _ensure_hot_danmaku(data_dir, report)
                 yield {"event": "done", "data": json.dumps(report, ensure_ascii=False)}
                 return
 
@@ -233,7 +262,7 @@ async def analyze_stream(
         except Exception as e:
             traceback.print_exc()
             yield {"event": "error", "data": json.dumps(
-                {"msg": f"分析失败: {str(e)}"}, ensure_ascii=False)}
+                {"msg": f"分析失败: 视频不存在"}, ensure_ascii=False)}
 
     return EventSourceResponse(event_generator())
 

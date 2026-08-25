@@ -6,6 +6,7 @@ function run(){
   $('#entry').classList.add('hide');
   $('#prog').classList.remove('hide');
   $('#result').classList.add('hide');
+  if(window.hideHotDanmaku) window.hideHotDanmaku();
   resetProgressUI();
 
   // 建立 SSE 连接

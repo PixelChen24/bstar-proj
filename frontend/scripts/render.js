@@ -142,6 +142,7 @@ function render(D){
   $('#acts').innerHTML = (D.acts||[]).map(a=>
     `<div class="act"><div><div>${a.t}</div><div class="src">依据：${a.s}</div></div></div>`).join('');
   renderWordClouds(D);
+  if (window.renderHotDanmaku) window.renderHotDanmaku(D);
 
   R.scrollIntoView({behavior:'smooth'});
 }

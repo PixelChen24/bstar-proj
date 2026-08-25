@@ -45,9 +45,11 @@ function layoutCloud(stageEl, words, kind){
     const word = decodeURIComponent(el.dataset.word || '');
     const hit = words.find(x=>x.w === word);
     if(!hit || !detail) return;
+    stageEl.querySelectorAll('.cloud-word').forEach(x=>x.classList.toggle('active', x === el));
     const label = kind === 'dm' ? '弹幕' : '评论';
-    detail.innerHTML = `<h4>「${escapeHtml(word)}」出现在 ${hit.c} 条${label}中</h4>
-      ${(hit.s||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('') || '<li class="muted">旧缓存没有原文样例，重新分析后可显示。</li>'}`;
+    const icon = kind === 'dm' ? '💬' : '🧵';
+    const examples = (hit.s||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('') || '<li class="muted">旧缓存没有原文样例，重新分析后可显示。</li>';
+    detail.innerHTML = `<h4><span>${icon}</span>「${escapeHtml(word)}」出现在 ${hit.c} 条${label}中</h4><ul>${examples}</ul>`;
     detail.classList.add('on');
   });
 }

@@ -20,7 +20,7 @@ from bilibili.comment import fetch_comments
 from analysis.llm import init_backend
 from analysis.llm_config import load_config, override
 from analysis.clean import clean_danmakus, clean_comments
-from analysis.danmaku_analysis import analyze_danmaku
+from analysis.danmaku_analysis import analyze_danmaku, build_peak_danmaku_showcase
 from analysis.comment_analysis import analyze_comments
 from analysis.report import generate_report
 from analysis.wordcloud import generate_word_clouds_from_records
@@ -164,7 +164,14 @@ def run_pipeline(data_dir: str, cfg: dict | None = None,
     slots, acts = generate_report(dm_themes, peaks, cm_themes, video_info, on_progress=on_progress)
     _progress(4, f"生成复盘报告与 Top{len(acts)} 建议", f"{time.time()-t0:.1f}s", 1.0)
 
-    # 8. 组装
+    # 8. 高能弹幕飞屏数据：从峰值区间抽取真实弹幕样本，前端横向飞屏展示。
+    hot_danmaku = build_peak_danmaku_showcase(
+        all_danmakus,
+        peaks,
+        video_info.get("duration", 0),
+    )
+
+    # 9. 组装
     stat = video_info.get("stat", {})
     report = {
         "video": {
@@ -179,6 +186,7 @@ def run_pipeline(data_dir: str, cfg: dict | None = None,
         },
         "dmThemes": dm_themes,
         "peaks": peaks,
+        "hotDanmaku": hot_danmaku,
         "cmThemes": cm_themes,
         "slots": slots,
         "acts": acts,
